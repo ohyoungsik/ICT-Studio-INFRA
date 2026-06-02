@@ -1,6 +1,5 @@
 locals {
   azs       = slice(data.aws_availability_zones.available.names, 0, 2)
-  az_suffix = ["a", "c"]
 }
 
 resource "aws_subnet" "public" {
