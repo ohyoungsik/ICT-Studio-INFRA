@@ -45,7 +45,7 @@ resource "aws_route_table_association" "private_app" {
   route_table_id = aws_route_table.private_app.id
 }
 
-# DB Subnet 경로: 기본만 제노(VPC 내부 링크)
+# DB Subnet 경로 (VPC 내부 링크)
 resource "aws_route_table" "db" {
   vpc_id = aws_vpc.main.id
 

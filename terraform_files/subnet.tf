@@ -1,14 +1,14 @@
 # ==============================================
 # Subnet 설정 (3가지 계층)
 # ==============================================
-# 디렉토리를 a, c 두 AZ으로 나눘어 고가용성 달성
+# 디렉토리를 a, c 두 AZ으로 나누어 고가용성 달성
 
 locals {
 
   azs = slice(data.aws_availability_zones.available.names, 0, 2)
 }
 
-# Public Subnet: ALB, NAT Gateway 위치 (uc778터넷 접근 스늸)
+# Public Subnet: ALB, NAT Gateway 위치
 resource "aws_subnet" "public" {
   count                   = length(var.public_subnet_cidrs)
   vpc_id                  = aws_vpc.main.id
