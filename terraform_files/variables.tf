@@ -44,11 +44,6 @@ variable "key_name" {
   default     = "ict-project-key"
 }
 
-variable "public_key" {
-  description = "Public key content for EC2 key pair (e.g. contents of ~/.ssh/id_rsa.pub)."
-  type        = string
-}
-
 variable "desired_capacity" {
   description = "ASG desired capacity."
   type        = number

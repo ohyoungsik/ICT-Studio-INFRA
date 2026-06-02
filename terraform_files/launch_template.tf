@@ -1,11 +1,25 @@
+# RSA 키 페어 자동 생성
+resource "tls_private_key" "app_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+# 생성된 퍼블릭 키를 AWS에 등록
 resource "aws_key_pair" "app_key" {
   key_name   = var.key_name
-  public_key = var.public_key
+  public_key = tls_private_key.app_key.public_key_openssh
 
   tags = {
     Name        = var.key_name
     Environment = local.env
   }
+}
+
+# 프라이빗 키를 로컬 파일로 저장 (SSH 접속 시 사용)
+resource "local_file" "private_key" {
+  content         = tls_private_key.app_key.private_key_pem
+  filename        = "${path.module}/${var.key_name}.pem"
+  file_permission = "0600"
 }
 
 data "aws_ami" "ubuntu" {

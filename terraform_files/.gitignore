@@ -30,13 +30,14 @@ override.tf.json
 .terraformrc
 terraform.rc
 
-# SSH keys / pem files
+# SSH keys / pem files (including Terraform-generated key)
 *.pem
 *.key
 id_rsa
 id_rsa.pub
 project-key
 project-key.pub
+ict-project-key.pem
 
 # OS / editor
 .DS_Store
