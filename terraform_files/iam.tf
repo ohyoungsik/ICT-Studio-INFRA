@@ -38,6 +38,21 @@ resource "aws_iam_role_policy_attachment" "ecr_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+# EC2 자기 자신의 Name 태그를 갱신할 수 있도록 허용
+resource "aws_iam_role_policy" "ec2_self_tag" {
+  name = "${local.name_prefix}-ec2-self-tag"
+  role = aws_iam_role.ec2_instance_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ec2:CreateTags"]
+      Resource = "arn:aws:ec2:*:*:instance/*"
+    }]
+  })
+}
+
 # IAM 인스턴스 프로파일 생성: EC2가 IAM 역할을 사용할 수 있도록 설정
 resource "aws_iam_instance_profile" "instance_profile" {
   name = "${local.name_prefix}-instance-profile"

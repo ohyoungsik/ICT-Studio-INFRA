@@ -49,12 +49,13 @@ resource "aws_launch_template" "app_lt" {
 
   vpc_security_group_ids = [aws_security_group.app.id]
 
-  user_data = base64encode(file("${path.module}/userdata.sh"))
+  user_data = base64encode(templatefile("${path.module}/userdata.sh", {
+    name_prefix = local.name_prefix
+  }))
 
   tag_specifications {
     resource_type = "instance"
     tags = {
-      Name        = "${local.name_prefix}-app-server"
       Environment = local.env
     }
   }

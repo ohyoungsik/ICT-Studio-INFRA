@@ -84,6 +84,27 @@ resource "aws_security_group_rule" "app_egress_all" {
   description       = "App outbound all traffic"
 }
 
+resource "aws_security_group_rule" "db_ingress_ssh_from_bastion" {
+  type                     = "ingress"
+  from_port                = 22
+  to_port                  = 22
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.bastion.id
+  security_group_id        = aws_security_group.db.id
+  description              = "SSH from bastion to DB servers"
+}
+
+# DB Main ↔ DB Replica 간 복제 통신 (향후 Replica 추가 시 사용)
+resource "aws_security_group_rule" "db_ingress_postgres_self" {
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.db.id
+  security_group_id        = aws_security_group.db.id
+  description              = "DB internal replication (Main <-> Replica)"
+}
+
 resource "aws_security_group_rule" "db_ingress_postgres" {
   type                     = "ingress"
   from_port                = 5432

@@ -44,6 +44,25 @@ variable "key_name" {
   default     = "ict-project-key"
 }
 
+variable "db_name" {
+  description = "PostgreSQL database name."
+  type        = string
+  default     = "scott_db"
+}
+
+variable "db_user" {
+  description = "PostgreSQL user name."
+  type        = string
+  default     = "scott"
+}
+
+variable "db_password" {
+  description = "PostgreSQL password."
+  type        = string
+  default     = "tiger"
+  sensitive   = true
+}
+
 variable "desired_capacity" {
   description = "ASG desired capacity."
   type        = number

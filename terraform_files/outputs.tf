@@ -65,6 +65,11 @@ output "key_pair_name" {
   value       = aws_key_pair.app_key.key_name
 }
 
+output "db_main_private_ip" {
+  description = "DB Main EC2 private IP address."
+  value       = aws_instance.db_main.private_ip
+}
+
 output "bastion_public_ip" {
   description = "Bastion host public IP address."
   value       = aws_instance.bastion.public_ip
@@ -79,6 +84,7 @@ output "deployment_summary" {
     ========================================
      ALB DNS      : ${aws_lb.application_load_balancer.dns_name}
      Bastion IP   : ${aws_instance.bastion.public_ip}
+     DB Main IP   : ${aws_instance.db_main.private_ip}
      ASG Name     : ${aws_autoscaling_group.app_asg.name}
      Key Pair     : ${aws_key_pair.app_key.key_name}
      Instance IDs : ${join(", ", data.aws_instances.app_instances.ids)}
