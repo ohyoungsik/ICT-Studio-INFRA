@@ -7,8 +7,8 @@ resource "aws_route_table" "public" {
   }
 
   tags = {
-    Name        = "${var.environment}-public-rt"
-    Environment = var.environment
+    Name        = "${local.name_prefix}-public-rt"
+    Environment = local.env
     Tier        = "public"
   }
 }
@@ -28,8 +28,8 @@ resource "aws_route_table" "private_app" {
   }
 
   tags = {
-    Name        = "${var.environment}-private-app-rt"
-    Environment = var.environment
+    Name        = "${local.name_prefix}-private-app-rt"
+    Environment = local.env
     Tier        = "private-app"
   }
 }
@@ -44,8 +44,8 @@ resource "aws_route_table" "db" {
   vpc_id = aws_vpc.main.id
 
   tags = {
-    Name        = "${var.environment}-db-rt"
-    Environment = var.environment
+    Name        = "${local.name_prefix}-db-rt"
+    Environment = local.env
     Tier        = "db"
   }
 }

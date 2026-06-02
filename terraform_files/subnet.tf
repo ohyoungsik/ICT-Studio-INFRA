@@ -1,5 +1,6 @@
 locals {
-  azs = slice(data.aws_availability_zones.available.names, 0, 2)
+  azs       = slice(data.aws_availability_zones.available.names, 0, 2)
+  az_suffix = ["a", "c"]
 }
 
 resource "aws_subnet" "public" {
@@ -10,8 +11,8 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name        = "${var.environment}-public-${count.index + 1}"
-    Environment = var.environment
+    Name        = "${local.name_prefix}-public-subnet-${local.az_suffix[count.index]}"
+    Environment = local.env
     Tier        = "public"
   }
 }
@@ -23,8 +24,8 @@ resource "aws_subnet" "private_app" {
   availability_zone = local.azs[count.index]
 
   tags = {
-    Name        = "${var.environment}-private-app-${count.index + 1}"
-    Environment = var.environment
+    Name        = "${local.name_prefix}-private-app-subnet-${local.az_suffix[count.index]}"
+    Environment = local.env
     Tier        = "private-app"
   }
 }
@@ -36,8 +37,8 @@ resource "aws_subnet" "db" {
   availability_zone = local.azs[count.index]
 
   tags = {
-    Name        = "${var.environment}-db-${count.index + 1}"
-    Environment = var.environment
+    Name        = "${local.name_prefix}-db-subnet-${local.az_suffix[count.index]}"
+    Environment = local.env
     Tier        = "db"
   }
 }

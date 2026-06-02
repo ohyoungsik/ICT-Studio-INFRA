@@ -4,8 +4,8 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
 
   tags = {
-    Name        = "${var.environment}-vpc"
-    Environment = var.environment
+    Name        = "${local.name_prefix}-vpc"
+    Environment = local.env
   }
 }
 
@@ -13,15 +13,15 @@ resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
   tags = {
-    Name        = "${var.environment}-igw"
-    Environment = var.environment
+    Name        = "${local.name_prefix}-igw"
+    Environment = local.env
   }
 }
 
 resource "aws_eip" "nat" {
   tags = {
-    Name        = "${var.environment}-nat-eip"
-    Environment = var.environment
+    Name        = "${local.name_prefix}-nat-eip"
+    Environment = local.env
   }
 }
 
@@ -32,7 +32,7 @@ resource "aws_nat_gateway" "main" {
   depends_on = [aws_internet_gateway.main]
 
   tags = {
-    Name        = "${var.environment}-nat-gateway"
-    Environment = var.environment
+    Name        = "${local.name_prefix}-nat"
+    Environment = local.env
   }
 }

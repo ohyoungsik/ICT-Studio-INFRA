@@ -4,12 +4,6 @@ variable "region" {
   default     = "ap-northeast-2"
 }
 
-variable "environment" {
-  description = "Environment name used for tagging and resource names."
-  type        = string
-  default     = "prod"
-}
-
 variable "vpc_cidr" {
   description = "VPC CIDR block."
   type        = string
@@ -37,5 +31,5 @@ variable "db_subnet_cidrs" {
 variable "alb_name" {
   description = "Application Load Balancer name."
   type        = string
-  default     = "concert-alb"
+  default     = "prod-ict-alb"
 }
