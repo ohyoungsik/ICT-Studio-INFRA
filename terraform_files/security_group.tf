@@ -8,6 +8,13 @@ resource "aws_security_group" "alb" {
   vpc_id      = aws_vpc.main.id
 }
 
+# Bastion Host 보안 그룹
+resource "aws_security_group" "bastion" {
+  name        = "${local.name_prefix}-bastion-sg"
+  description = "Bastion host security group"
+  vpc_id      = aws_vpc.main.id
+}
+
 # 애플리케이션 서버 보안 그룹
 resource "aws_security_group" "app" {
   name        = "${local.name_prefix}-app-sg"

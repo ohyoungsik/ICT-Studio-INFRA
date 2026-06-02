@@ -65,6 +65,11 @@ output "key_pair_name" {
   value       = aws_key_pair.app_key.key_name
 }
 
+output "bastion_public_ip" {
+  description = "Bastion host public IP address."
+  value       = aws_instance.bastion.public_ip
+}
+
 output "deployment_summary" {
   description = "Deployment result summary."
   value = <<-EOT
@@ -73,6 +78,7 @@ output "deployment_summary" {
      Deployment Complete!
     ========================================
      ALB DNS      : ${aws_lb.application_load_balancer.dns_name}
+     Bastion IP   : ${aws_instance.bastion.public_ip}
      ASG Name     : ${aws_autoscaling_group.app_asg.name}
      Key Pair     : ${aws_key_pair.app_key.key_name}
      Instance IDs : ${join(", ", data.aws_instances.app_instances.ids)}
