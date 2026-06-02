@@ -1,3 +1,9 @@
+# ==============================================
+# Security Group 규칙
+# ==============================================
+# 트래픽 흐름: 사용자 → ALB → App Server → DB Server
+# 같이 단방향 접근만 허용고 기타 모든 접근은 차단
+
 resource "aws_security_group_rule" "alb_ingress_http" {
   type              = "ingress"
   from_port         = 80

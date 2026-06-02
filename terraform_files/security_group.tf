@@ -1,14 +1,20 @@
+# ==============================================
+# Security Group 정의 (3가지: ALB, App, DB)
+# ==============================================
+
 resource "aws_security_group" "alb" {
   name        = "${local.name_prefix}-alb-sg"
   description = "ALB security group"
   vpc_id      = aws_vpc.main.id
 }
 
+# 애플리케이션 서버 보안 그룹
 resource "aws_security_group" "app" {
   name        = "${local.name_prefix}-app-sg"
   description = "Application servers security group"
   vpc_id      = aws_vpc.main.id
 }
+# 데이터베이스 보안 그룹
 
 resource "aws_security_group" "db" {
   name        = "${local.name_prefix}-db-sg"

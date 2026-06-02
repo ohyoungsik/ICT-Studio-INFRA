@@ -1,3 +1,7 @@
+# ==============================================
+# Route Table 설정 (네트워크 경로 정의)
+# ==============================================
+
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -19,6 +23,7 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+# Private App Subnet 경로: 0.0.0.0/0 -> NAT Gateway (나가기만 가능)
 resource "aws_route_table" "private_app" {
   vpc_id = aws_vpc.main.id
 
@@ -40,6 +45,7 @@ resource "aws_route_table_association" "private_app" {
   route_table_id = aws_route_table.private_app.id
 }
 
+# DB Subnet 경로: 기본만 제노(VPC 내부 링크)
 resource "aws_route_table" "db" {
   vpc_id = aws_vpc.main.id
 

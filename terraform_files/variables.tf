@@ -1,3 +1,7 @@
+# ==============================================
+# 입력 변수 정의
+# ==============================================
+
 variable "region" {
   description = "AWS region for resources."
   type        = string
@@ -32,4 +36,33 @@ variable "alb_name" {
   description = "Application Load Balancer name."
   type        = string
   default     = "prod-ict-alb"
+}
+
+variable "key_name" {
+  description = "EC2 key pair name for SSH access."
+  type        = string
+  default     = "ict-project-key"
+}
+
+variable "public_key" {
+  description = "Public key content for EC2 key pair (e.g. contents of ~/.ssh/id_rsa.pub)."
+  type        = string
+}
+
+variable "desired_capacity" {
+  description = "ASG desired capacity."
+  type        = number
+  default     = 2
+}
+
+variable "min_size" {
+  description = "ASG minimum size."
+  type        = number
+  default     = 2
+}
+
+variable "max_size" {
+  description = "ASG maximum size."
+  type        = number
+  default     = 4
 }

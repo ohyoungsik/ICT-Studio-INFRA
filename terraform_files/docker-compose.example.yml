@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # Nginx 웹 서버: React 정적 파일 제공 및 FastAPI 역프록시
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./react-build:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+    restart: always
+
+  # FastAPI 백엔드 서비스
+  backend:
+    image: dudtlr9308/hub-app:latest
+    container_name: backend
+    environment:
+      # Python 출력을 즉시 표시 (로그 버퍼링 제거)
+      - PYTHONUNBUFFERED=1
+    expose:
+      - "8000"
+    restart: always
+    # ALB 헬스 체크용 엔드포인트 (3회 연속 실패 시 컨테이너 재시작)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
