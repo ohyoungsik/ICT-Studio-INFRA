@@ -102,7 +102,7 @@ resource "aws_security_group_rule" "db_ingress_postgres_self" {
   protocol                 = "tcp"
   source_security_group_id = aws_security_group.db.id
   security_group_id        = aws_security_group.db.id
-  description              = "DB internal replication (Main <-> Replica)"
+  description              = "DB internal replication (Main - Replica)"
 }
 
 resource "aws_security_group_rule" "db_ingress_postgres" {
