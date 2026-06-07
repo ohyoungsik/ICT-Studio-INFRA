@@ -7,9 +7,9 @@
 
 resource "aws_autoscaling_group" "app_asg" {
   name                = "${local.name_prefix}-app-asg"
-  desired_capacity    = var.desired_capacity
-  min_size            = var.min_size
-  max_size            = var.max_size
+  desired_capacity    = 2
+  min_size            = 2
+  max_size            = 2
   vpc_zone_identifier = aws_subnet.private_app[*].id
 
   target_group_arns = [
@@ -29,7 +29,7 @@ resource "aws_autoscaling_group" "app_asg" {
 
   tag {
     key                 = "Name"
-    value               = "${local.name_prefix}-app-server"
+    value               = "${local.name_prefix}-app-auto"
     propagate_at_launch = true
   }
 }
