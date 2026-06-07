@@ -7,9 +7,9 @@
 
 resource "aws_autoscaling_group" "app_asg" {
   name                = "${local.name_prefix}-app-asg"
-  desired_capacity    = 2
-  min_size            = 2
-  max_size            = 2
+  desired_capacity    = var.desired_capacity
+  min_size            = var.min_size
+  max_size            = var.max_size
   vpc_zone_identifier = aws_subnet.private_app[*].id
 
   target_group_arns = [
@@ -29,7 +29,22 @@ resource "aws_autoscaling_group" "app_asg" {
 
   tag {
     key                 = "Name"
-    value               = "${local.name_prefix}-app-auto"
+    value               = "${local.name_prefix}-private-app"
     propagate_at_launch = true
+  }
+}
+
+resource "aws_autoscaling_policy" "cpu_target_tracking" {
+  name                   = "${local.name_prefix}-cpu-target"
+  autoscaling_group_name = aws_autoscaling_group.app_asg.name
+  policy_type            = "TargetTrackingScaling"
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+
+    # cpu 사용률이 70%를 초과하면 인스턴스 추가, 70% 미만이면 인스턴스 제거
+    target_value = 70.0
   }
 }

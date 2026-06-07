@@ -17,6 +17,6 @@ public_key = "ssh-rsa AAAAB3NzaC1yc2E... your-public-key-here"
 
 # key_name         = "ict-project-key"
 # region           = "ap-northeast-2"
-# desired_capacity = 2
-# min_size         = 2
+# desired_capacity = 1
+# min_size         = 1
 # max_size         = 4
