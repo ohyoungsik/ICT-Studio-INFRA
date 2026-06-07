@@ -17,10 +17,11 @@ resource "aws_lb" "application_load_balancer" {
 
 # 대상 그룹: ALB 뒤에 붙는 기본 대상 그룹 (응답 싱크 동작)
 resource "aws_lb_target_group" "app" {
-  name     = "${local.name_prefix}-app-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
+  name                 = "${local.name_prefix}-app-tg"
+  port                 = 80
+  protocol             = "HTTP"
+  vpc_id               = aws_vpc.main.id
+  deregistration_delay = 20
   # Health Check: /api/health 엔드포인트로 EC2 인스턴스 상태 모니터링
 
   health_check {
