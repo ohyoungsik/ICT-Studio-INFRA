@@ -1,0 +1,53 @@
+name: Terraform
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "terraform_files/**"
+      - "scripts/init-backend-ci.sh"
+      - ".github/workflows/terraform.yml"
+  pull_request:
+    paths:
+      - "terraform_files/**"
+      - "scripts/init-backend-ci.sh"
+      - ".github/workflows/terraform.yml"
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: ap-northeast-2
+      TF_BACKEND_KEY: prod-ict/terraform.tfstate
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Init backend
+        run: bash scripts/init-backend-ci.sh
+
+      - name: Terraform validate
+        run: terraform -chdir=terraform_files validate
+
+      - name: Terraform plan
+        run: terraform -chdir=terraform_files plan -out=tfplan
+
+      - name: Terraform apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform -chdir=terraform_files apply -auto-approve tfplan

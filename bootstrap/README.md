@@ -38,6 +38,24 @@ terraform plan
 terraform apply
 ```
 
+## GitHub Actions Usage
+
+GitHub Actions should use the CI backend script instead of the local bootstrap
+Terraform state. The CI script uses the AWS account ID to derive a stable bucket
+name, creates the bucket if needed, and then initializes `terraform_files`.
+
+Required repository secret:
+
+```text
+AWS_ROLE_ARN
+```
+
+Workflow command:
+
+```bash
+bash scripts/init-backend-ci.sh
+```
+
 ## Manual Usage
 
 ```powershell
