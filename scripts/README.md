@@ -1,98 +1,122 @@
-# Scripts
+# Scripts 사용법
 
-이 디렉터리는 Terraform S3 backend를 준비하기 위한 실행 스크립트를 담고 있습니다.
+이 폴더에는 Terraform을 실행하기 전에 필요한 준비 스크립트가 들어 있습니다.
 
-메인 Terraform 코드는 `terraform_files`에 있지만, S3 backend bucket은
-`terraform init` 전에 이미 존재해야 합니다. 그래서 로컬과 GitHub Actions에서
-각각 다른 방식으로 backend를 먼저 준비합니다.
+이 프로젝트는 Terraform state를 S3 bucket에 저장합니다. 그래서 처음 실행할 때
+S3 bucket을 먼저 만들고, 그 bucket을 Terraform backend로 연결해야 합니다.
 
-## 로컬 개발 환경
+## 팀원이 Ubuntu에서 처음 실행할 때
 
-개발자 PC에서 직접 Terraform을 실행할 때 사용합니다.
-
-### `init-backend.sh`
-
-Linux/macOS용 backend 초기화 스크립트입니다.
-
-저장소 루트에서 실행합니다.
+저장소를 받은 뒤 프로젝트 루트에서 실행합니다.
 
 ```bash
 bash scripts/init-backend.sh
 ```
 
-동작 순서:
+이 명령이 해주는 일:
 
-1. `bootstrap` 디렉터리에서 `terraform init`을 실행합니다.
-2. `bootstrap` 디렉터리에서 `terraform apply`를 실행해 backend S3 bucket을 생성합니다.
-3. bootstrap output에서 생성된 bucket 이름을 읽습니다.
-4. `terraform_files` 디렉터리에서 S3 backend 설정을 포함해
-   `terraform init -reconfigure`를 실행합니다.
-
-bootstrap apply 확인을 생략하려면 다음처럼 실행합니다.
-
-```bash
-AUTO_APPROVE=true bash scripts/init-backend.sh
+```text
+1. backend용 S3 bucket 생성
+2. terraform_files의 backend 초기화
 ```
 
-### `init-backend.ps1`
+그 다음 메인 Terraform을 실행합니다.
 
-Windows PowerShell용 backend 초기화 스크립트입니다.
+```bash
+cd terraform_files
+terraform plan
+terraform apply
+```
 
-저장소 루트에서 실행합니다.
+주의: 처음부터 `terraform_files`로 들어가서 `terraform init`을 직접 실행하지 마세요.
+backend bucket 정보가 없어서 에러가 날 수 있습니다.
+
+## Windows에서 실행할 때
+
+Windows PowerShell에서는 아래 명령을 사용합니다.
 
 ```powershell
 .\scripts\init-backend.ps1
 ```
 
-bootstrap apply 확인을 생략하려면 다음처럼 실행합니다.
+그 다음:
 
 ```powershell
-.\scripts\init-backend.ps1 -AutoApprove
+cd terraform_files
+terraform plan
+terraform apply
 ```
 
-## GitHub Actions 환경
+## 삭제할 때
 
-### `init-backend-ci.sh`
+삭제할 때도 먼저 backend를 연결해야 합니다.
 
-GitHub Actions runner 전용 backend 초기화 스크립트입니다.
+```bash
+bash scripts/init-backend.sh
+cd terraform_files
+terraform plan -destroy
+terraform destroy
+```
 
-이 스크립트는 `bootstrap` Terraform 디렉터리를 사용하지 않습니다.
-GitHub-hosted runner는 매번 새로 만들어지고 local state를 유지하지 못하기 때문입니다.
+대부분의 경우 backend S3 bucket은 삭제하지 않습니다.  
+나중에 다시 배포하거나 state 기록을 확인할 수 있기 때문입니다.
 
-대신 다음 방식으로 동작합니다.
+## GitHub Actions에서 사용할 때
 
-1. 현재 AWS 계정 ID를 조회합니다.
-2. AWS 계정 ID 기반으로 고정된 backend bucket 이름을 만듭니다.
+GitHub Actions는 사람이 직접 실행하지 않습니다. workflow가 자동으로 실행합니다.
 
-   ```text
-   prod-ict-terraform-state-${AWS_ACCOUNT_ID}
-   ```
-
-3. bucket이 없으면 생성합니다.
-4. public access block, AES256 암호화, versioning을 설정합니다.
-5. `terraform_files` 디렉터리에서 `terraform init -reconfigure`를 실행합니다.
-
-workflow에서는 다음처럼 호출합니다.
+workflow에서는 아래 스크립트를 사용합니다.
 
 ```bash
 bash scripts/init-backend-ci.sh
 ```
 
-필요한 GitHub Repository Secret:
+이 스크립트는 GitHub Actions runner에서 backend S3 bucket을 준비하고,
+`terraform_files`를 초기화합니다.
+
+## GitHub Actions에 필요한 Secret
+
+현재 workflow는 AWS Access Key 방식으로 AWS에 접속합니다.
+GitHub Repository Secret에 아래 두 값을 등록해야 합니다.
 
 ```text
-AWS_ROLE_ARN
+AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY
 ```
 
-backend 초기화 이후 workflow는 다음 명령을 실행할 수 있습니다.
+등록 위치:
 
-```bash
-terraform -chdir=terraform_files validate
-terraform -chdir=terraform_files plan -out=tfplan
-terraform -chdir=terraform_files apply -auto-approve tfplan
+```text
+GitHub Repository
+-> Settings
+-> Secrets and variables
+-> Actions
+-> New repository secret
 ```
 
-## 요약
+## GitHub Actions 배포 흐름
 
-로컬 개발자는 `init-backend.sh` 또는 `init-backend.ps1`을 사용합니다.
-GitHub Actions에서는 `init-backend-ci.sh`만 사용합니다.
+PR을 올리면:
+
+```text
+terraform validate
+terraform plan
+```
+
+main 브랜치에 push 또는 merge되면:
+
+```text
+terraform validate
+terraform plan
+terraform apply
+```
+
+즉, PR에서는 확인만 하고 실제 AWS 배포는 main 브랜치에 들어갔을 때 실행됩니다.
+
+## 파일별 역할
+
+```text
+init-backend.sh       Ubuntu/Linux/macOS 로컬 실행용
+init-backend.ps1      Windows PowerShell 로컬 실행용
+init-backend-ci.sh    GitHub Actions 실행용
+```
