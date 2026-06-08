@@ -65,6 +65,16 @@ output "key_pair_name" {
   value       = aws_key_pair.app_key.key_name
 }
 
+output "private_key_secret_name" {
+  description = "Secrets Manager secret name containing the generated private SSH key."
+  value       = aws_secretsmanager_secret.private_key.name
+}
+
+output "private_key_download_command" {
+  description = "Command to download the generated private SSH key from Secrets Manager."
+  value       = "aws secretsmanager get-secret-value --secret-id ${aws_secretsmanager_secret.private_key.name} --query SecretString --output text > ${var.key_name}.pem"
+}
+
 output "db_main_private_ip" {
   description = "DB Main EC2 private IP address."
   value       = aws_instance.db_main.private_ip
@@ -77,7 +87,7 @@ output "bastion_public_ip" {
 
 output "deployment_summary" {
   description = "Deployment result summary."
-  value = <<-EOT
+  value       = <<-EOT
 
     ========================================
      Deployment Complete!
@@ -87,6 +97,7 @@ output "deployment_summary" {
      DB Main IP   : ${aws_instance.db_main.private_ip}
      ASG Name     : ${aws_autoscaling_group.app_asg.name}
      Key Pair     : ${aws_key_pair.app_key.key_name}
+     Key Secret   : ${aws_secretsmanager_secret.private_key.name}
      Instance IDs : ${join(", ", data.aws_instances.app_instances.ids)}
      Private IPs  : ${join(", ", data.aws_instances.app_instances.private_ips)}
     ========================================

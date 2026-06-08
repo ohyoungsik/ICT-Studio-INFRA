@@ -22,6 +22,22 @@ resource "local_file" "private_key" {
   file_permission = "0600"
 }
 
+resource "aws_secretsmanager_secret" "private_key" {
+  name                    = "${local.name_prefix}/${var.key_name}/private-key"
+  description             = "Private SSH key for ${local.name_prefix} EC2 access."
+  recovery_window_in_days = 0
+
+  tags = {
+    Name        = "${local.name_prefix}-private-key"
+    Environment = local.env
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "private_key" {
+  secret_id     = aws_secretsmanager_secret.private_key.id
+  secret_string = tls_private_key.app_key.private_key_pem
+}
+
 data "aws_ami" "ubuntu" {
   most_recent = true
   owners      = ["099720109477"] # Canonical (Ubuntu 공식 배포자)
