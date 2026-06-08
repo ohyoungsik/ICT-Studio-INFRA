@@ -3,6 +3,11 @@ output "backend_bucket" {
   value       = aws_s3_bucket.terraform_state.bucket
 }
 
+output "backend_region" {
+  description = "AWS region for the main Terraform backend."
+  value       = var.region
+}
+
 output "main_terraform_init_command" {
   description = "Run this in terraform_files after bootstrap apply."
   value = join(" ", [

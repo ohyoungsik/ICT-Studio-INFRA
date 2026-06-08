@@ -6,6 +6,40 @@ does not exist yet during the first run.
 
 ## Usage
 
+From the repository root, run the helper script.
+
+Linux/macOS:
+
+```bash
+bash scripts/init-backend.sh
+```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\init-backend.ps1
+```
+
+To skip the Terraform apply confirmation for the bootstrap bucket:
+
+```bash
+AUTO_APPROVE=true bash scripts/init-backend.sh
+```
+
+```powershell
+.\scripts\init-backend.ps1 -AutoApprove
+```
+
+After the script finishes:
+
+```powershell
+cd terraform_files
+terraform plan
+terraform apply
+```
+
+## Manual Usage
+
 ```powershell
 cd bootstrap
 terraform init
