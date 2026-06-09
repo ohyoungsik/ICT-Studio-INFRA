@@ -124,3 +124,239 @@ resource "aws_security_group_rule" "db_egress_all" {
   security_group_id = aws_security_group.db.id
   description       = "DB outbound all traffic"
 }
+
+# ==============================================
+# Docker Swarm Security Group 규칙
+# ==============================================
+# 아키텍처: Manager(고정 EC2, master_node SG) + Worker(ASG, app SG)
+# Swarm 필수 포트: 2377/tcp(관리), 7946/tcp·udp(gossip), 4789/udp(overlay)
+
+# ── Master Node SG ─────────────────────────────
+
+# 역할: Bastion 경유 SSH 관리 접속
+# 용도: 프라이빗 서브넷의 manager에 운영자가 접속해 swarm/docker 명령 실행
+# 흐름: Bastion → Manager:22
+resource "aws_security_group_rule" "master_ingress_ssh_from_bastion" {
+  type                     = "ingress"
+  from_port                = 22
+  to_port                  = 22
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.bastion.id
+  security_group_id        = aws_security_group.master_node.id
+  description              = "SSH from bastion to swarm manager"
+}
+
+# 역할: Swarm 클러스터 관리 API (Control Plane)
+# 용도: worker의 `swarm join`, heartbeat, task 스케줄링 명령 수신
+# 흐름: Worker(app SG) → Manager:2377
+# 비고: 이 포트가 막히면 worker join 및 클러스터 heartbeat 실패
+resource "aws_security_group_rule" "master_ingress_swarm_management_from_workers" {
+  type                     = "ingress"
+  from_port                = 2377
+  to_port                  = 2377
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.app.id
+  security_group_id        = aws_security_group.master_node.id
+  description              = "Swarm cluster management from workers"
+}
+
+# 역할: Swarm manager 간 Raft/consensus 통신 (향후 manager 다중화 시)
+# 용도: manager 3대 구성 시 leader 선출, 클러스터 상태 복제
+# 흐름: Manager → Manager:2377
+resource "aws_security_group_rule" "master_ingress_swarm_management_self" {
+  type                     = "ingress"
+  from_port                = 2377
+  to_port                  = 2377
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.master_node.id
+  security_group_id        = aws_security_group.master_node.id
+  description              = "Swarm cluster management between managers"
+}
+
+# 역할: Swarm 노드 디스커버리 - Gossip (TCP)
+# 용도: 클러스터 멤버 목록·overlay 멤버십 정보 교환
+# 흐름: Worker → Manager:7946 (양방향 gossip의 수신 측)
+resource "aws_security_group_rule" "master_ingress_swarm_gossip_tcp_from_workers" {
+  type                     = "ingress"
+  from_port                = 7946
+  to_port                  = 7946
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.app.id
+  security_group_id        = aws_security_group.master_node.id
+  description              = "Swarm node discovery TCP from workers"
+}
+
+# 역할: Swarm manager 간 Gossip (TCP) - 향후 manager 다중화 시
+# 흐름: Manager → Manager:7946
+resource "aws_security_group_rule" "master_ingress_swarm_gossip_tcp_self" {
+  type                     = "ingress"
+  from_port                = 7946
+  to_port                  = 7946
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.master_node.id
+  security_group_id        = aws_security_group.master_node.id
+  description              = "Swarm node discovery TCP between managers"
+}
+
+# 역할: Swarm 노드 디스커버리 - Gossip (UDP)
+# 용도: TCP와 동일 목적의 gossip 프로토콜 (UDP 채널)
+# 흐름: Worker → Manager:7946
+resource "aws_security_group_rule" "master_ingress_swarm_gossip_udp_from_workers" {
+  type                     = "ingress"
+  from_port                = 7946
+  to_port                  = 7946
+  protocol                 = "udp"
+  source_security_group_id = aws_security_group.app.id
+  security_group_id        = aws_security_group.master_node.id
+  description              = "Swarm node discovery UDP from workers"
+}
+
+# 역할: Swarm manager 간 Gossip (UDP) - 향후 manager 다중화 시
+# 흐름: Manager → Manager:7946
+resource "aws_security_group_rule" "master_ingress_swarm_gossip_udp_self" {
+  type                     = "ingress"
+  from_port                = 7946
+  to_port                  = 7946
+  protocol                 = "udp"
+  source_security_group_id = aws_security_group.master_node.id
+  security_group_id        = aws_security_group.master_node.id
+  description              = "Swarm node discovery UDP between managers"
+}
+
+# 역할: Swarm Overlay Network (VXLAN 데이터 plane)
+# 용도: 노드 간 컨테이너 트래픽 터널링 (다른 AZ worker 간 서비스 통신)
+# 흐름: Worker → Manager:4789
+resource "aws_security_group_rule" "master_ingress_swarm_overlay_from_workers" {
+  type                     = "ingress"
+  from_port                = 4789
+  to_port                  = 4789
+  protocol                 = "udp"
+  source_security_group_id = aws_security_group.app.id
+  security_group_id        = aws_security_group.master_node.id
+  description              = "Swarm overlay network from workers"
+}
+
+# 역할: Swarm manager 간 Overlay (UDP) - 향후 manager 다중화 시
+# 흐름: Manager → Manager:4789
+resource "aws_security_group_rule" "master_ingress_swarm_overlay_self" {
+  type                     = "ingress"
+  from_port                = 4789
+  to_port                  = 4789
+  protocol                 = "udp"
+  source_security_group_id = aws_security_group.master_node.id
+  security_group_id        = aws_security_group.master_node.id
+  description              = "Swarm overlay network between managers"
+}
+
+# 역할: Manager 아웃바운드 전체 허용
+# 용도: NAT Gateway 경유 Docker Hub/ECR pull, apt, SSM, package download
+# 비고: manager는 ALB 대상이 아니므로 ingress는 SSH + Swarm만 최소 개방
+resource "aws_security_group_rule" "master_egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.master_node.id
+  description       = "Manager outbound (NAT, ECR, packages)"
+}
+
+# ── Worker(App) SG - Swarm 추가 규칙 ───────────
+
+# 역할: Manager → Worker control plane 역방향 통신
+# 용도: manager가 worker에 task 배포·상태 확인 시 사용
+# 흐름: Manager → Worker:2377
+resource "aws_security_group_rule" "app_ingress_swarm_management_from_master" {
+  type                     = "ingress"
+  from_port                = 2377
+  to_port                  = 2377
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.master_node.id
+  security_group_id        = aws_security_group.app.id
+  description              = "Swarm cluster management from manager"
+}
+
+# 역할: Worker 간 control/gossip 보조 통신
+# 용도: ASG로 scale-out된 worker끼리 Swarm 내부 통신
+# 흐름: Worker → Worker:2377
+resource "aws_security_group_rule" "app_ingress_swarm_management_self" {
+  type                     = "ingress"
+  from_port                = 2377
+  to_port                  = 2377
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.app.id
+  security_group_id        = aws_security_group.app.id
+  description              = "Swarm cluster management between workers"
+}
+
+# 역할: Manager → Worker Gossip (TCP)
+# 흐름: Manager → Worker:7946
+resource "aws_security_group_rule" "app_ingress_swarm_gossip_tcp_from_master" {
+  type                     = "ingress"
+  from_port                = 7946
+  to_port                  = 7946
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.master_node.id
+  security_group_id        = aws_security_group.app.id
+  description              = "Swarm node discovery TCP from manager"
+}
+
+# 역할: Worker 간 Gossip (TCP)
+# 흐름: Worker → Worker:7946
+resource "aws_security_group_rule" "app_ingress_swarm_gossip_tcp_self" {
+  type                     = "ingress"
+  from_port                = 7946
+  to_port                  = 7946
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.app.id
+  security_group_id        = aws_security_group.app.id
+  description              = "Swarm node discovery TCP between workers"
+}
+
+# 역할: Manager → Worker Gossip (UDP)
+# 흐름: Manager → Worker:7946
+resource "aws_security_group_rule" "app_ingress_swarm_gossip_udp_from_master" {
+  type                     = "ingress"
+  from_port                = 7946
+  to_port                  = 7946
+  protocol                 = "udp"
+  source_security_group_id = aws_security_group.master_node.id
+  security_group_id        = aws_security_group.app.id
+  description              = "Swarm node discovery UDP from manager"
+}
+
+# 역할: Worker 간 Gossip (UDP)
+# 흐름: Worker → Worker:7946
+resource "aws_security_group_rule" "app_ingress_swarm_gossip_udp_self" {
+  type                     = "ingress"
+  from_port                = 7946
+  to_port                  = 7946
+  protocol                 = "udp"
+  source_security_group_id = aws_security_group.app.id
+  security_group_id        = aws_security_group.app.id
+  description              = "Swarm node discovery UDP between workers"
+}
+
+# 역할: Manager → Worker Overlay (VXLAN)
+# 흐름: Manager → Worker:4789
+resource "aws_security_group_rule" "app_ingress_swarm_overlay_from_master" {
+  type                     = "ingress"
+  from_port                = 4789
+  to_port                  = 4789
+  protocol                 = "udp"
+  source_security_group_id = aws_security_group.master_node.id
+  security_group_id        = aws_security_group.app.id
+  description              = "Swarm overlay network from manager"
+}
+
+# 역할: Worker 간 Overlay (VXLAN) - multi-node 서비스 트래픽
+# 흐름: Worker → Worker:4789
+resource "aws_security_group_rule" "app_ingress_swarm_overlay_self" {
+  type                     = "ingress"
+  from_port                = 4789
+  to_port                  = 4789
+  protocol                 = "udp"
+  source_security_group_id = aws_security_group.app.id
+  security_group_id        = aws_security_group.app.id
+  description              = "Swarm overlay network between workers"
+}
