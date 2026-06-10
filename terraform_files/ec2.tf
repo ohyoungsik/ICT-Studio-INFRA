@@ -1,3 +1,22 @@
+# init
+data "cloudinit_config" "master_node" {
+  gzip          = true
+  base64_encode = true
+
+  part {
+    content_type = "text/x-shellscript"
+    content      = templatefile("${path.module}/../scripts/master-node-bootstrap.sh", {
+      name_prefix = local.name_prefix
+      aws_region  = var.region
+    })
+  }
+
+  part {
+    content_type = "text/x-shellscript"
+    content      = file("${path.module}/../scripts/portainer-init.sh")
+  }
+}
+
 # master node instance
 resource "aws_instance" "master_node" {
   ami                    = data.aws_ami.ubuntu.id
@@ -7,10 +26,7 @@ resource "aws_instance" "master_node" {
   vpc_security_group_ids = [aws_security_group.master_node.id]
   subnet_id              = aws_subnet.private_app[0].id
 
-  user_data = base64encode(templatefile("${path.module}/master-node-bootstrap.sh", {
-    name_prefix = local.name_prefix
-    aws_region  = var.region
-  }))
+  user_data = data.cloudinit_config.master_node.rendered
 
   tags = {
     Name = "${local.name_prefix}-master-node"
