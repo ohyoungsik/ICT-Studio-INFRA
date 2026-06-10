@@ -1,0 +1,61 @@
+name: Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_destroy:
+        description: 'Type DESTROY-prod-ict to confirm Terraform destroy.'
+        required: true
+        type: string
+      backend_key:
+        description: 'Terraform backend state key to destroy.'
+        required: true
+        default: 'prod-ict/terraform.tfstate'
+        type: string
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: ap-northeast-2
+      TF_BACKEND_KEY: ${{ inputs.backend_key }}
+
+    steps:
+      - name: Check destroy confirmation
+        env:
+          CONFIRM_DESTROY: ${{ inputs.confirm_destroy }}
+        run: |
+          if [ "$CONFIRM_DESTROY" != "DESTROY-prod-ict" ]; then
+            echo "confirm_destroy must be exactly: DESTROY-prod-ict"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Init backend
+        run: bash scripts/init-backend-ci.sh
+
+      - name: Terraform validate
+        run: terraform -chdir=terraform_files validate
+
+      - name: Terraform destroy plan
+        run: terraform -chdir=terraform_files plan -destroy -out=tfdestroy.plan
+
+      - name: Terraform destroy
+        run: terraform -chdir=terraform_files apply -auto-approve tfdestroy.plan
