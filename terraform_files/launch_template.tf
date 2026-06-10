@@ -65,8 +65,9 @@ resource "aws_launch_template" "app_lt" {
 
   vpc_security_group_ids = [aws_security_group.app.id]
 
-  user_data = base64encode(templatefile("${path.module}/userdata.sh", {
+  user_data = base64encode(templatefile("${path.module}/worker-node-bootstrap.sh", {
     name_prefix = local.name_prefix
+    aws_region  = var.region
   }))
 
   tag_specifications {

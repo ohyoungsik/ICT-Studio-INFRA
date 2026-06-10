@@ -28,3 +28,10 @@ resource "aws_security_group" "db" {
   description = "DB security group"
   vpc_id      = aws_vpc.main.id
 }
+
+# master node security group
+resource "aws_security_group" "master_node" {
+  name        = "${local.name_prefix}-master-node-sg"
+  description = "Master node security group"
+  vpc_id      = aws_vpc.main.id
+}
