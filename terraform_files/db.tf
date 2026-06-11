@@ -19,6 +19,7 @@ resource "aws_instance" "db_main" {
 
   tags = {
     Name        = "${local.name_prefix}-db-main"
+    Role        = "db"
     Environment = local.env
   }
 }

@@ -32,6 +32,18 @@ resource "aws_autoscaling_group" "app_asg" {
     value               = "${local.name_prefix}-private-app"
     propagate_at_launch = true
   }
+
+  tag { # app 태그 추가
+    key                 = "Role"
+    value               = "app"
+    propagate_at_launch = true
+  }
+
+  tag { # env 태그 추가
+    key                 = "Environment"
+    value               = local.env
+    propagate_at_launch = true
+  }
 }
 
 resource "aws_autoscaling_policy" "cpu_target_tracking" {

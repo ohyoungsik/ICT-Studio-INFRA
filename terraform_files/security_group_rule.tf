@@ -397,3 +397,73 @@ resource "aws_security_group_rule" "app_ingress_swarm_overlay_self" {
   security_group_id        = aws_security_group.app.id
   description              = "Swarm overlay network between workers"
 }
+
+##############################
+# 아래는 모니터링을 위한 보안규칙
+##############################
+
+# 내 pc > bastion grafana
+resource "aws_security_group_rule" "bastion_ingress_grafana_from_my_ip" {
+  type              = "ingress"
+  from_port         = 3000
+  to_port           = 3000
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.bastion.id
+  description       = "Public Grafana access"
+}
+
+# 내 pc > bastion prometheus
+resource "aws_security_group_rule" "bastion_ingress_prometheus_from_my_ip" {
+  type              = "ingress"
+  from_port         = 9090
+  to_port           = 9090
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.bastion.id
+  description       = "Public Prometheus access"
+}
+
+# app alloy > bastion loki
+resource "aws_security_group_rule" "bastion_ingress_loki_from_app" {
+  type                     = "ingress"
+  from_port                = 3100
+  to_port                  = 3100
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.app.id
+  security_group_id        = aws_security_group.bastion.id
+  description              = "Alloy on app to Loki"
+}
+
+# bastion prometheus > app node exporter
+resource "aws_security_group_rule" "app_ingress_node_exporter_from_bastion" {
+  type                     = "ingress"
+  from_port                = 9100
+  to_port                  = 9100
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.bastion.id
+  security_group_id        = aws_security_group.app.id
+  description              = "Prometheus to app node-exporter"
+}
+
+# bastion prometheus > db node exporter
+resource "aws_security_group_rule" "db_ingress_node_exporter_from_bastion" {
+  type                     = "ingress"
+  from_port                = 9100
+  to_port                  = 9100
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.bastion.id
+  security_group_id        = aws_security_group.db.id
+  description              = "Prometheus to db node-exporter"
+}
+
+# bastion prometheus > app cadvisor
+resource "aws_security_group_rule" "app_ingress_cadvisor_from_bastion" {
+  type                     = "ingress"
+  from_port                = 8080
+  to_port                  = 8080
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.bastion.id
+  security_group_id        = aws_security_group.app.id
+  description              = "Prometheus to app cAdvisor"
+}

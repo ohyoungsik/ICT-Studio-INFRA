@@ -80,3 +80,23 @@ resource "aws_iam_instance_profile" "instance_profile" {
   name = "${local.name_prefix}-instance-profile"
   role = aws_iam_role.ec2_instance_role.name
 }
+
+resource "aws_iam_role_policy" "prometheus_ec2_sd" {
+  name = "${local.name_prefix}-prometheus-ec2-sd"
+  role = aws_iam_role.ec2_instance_role.id
+  # prometheus가 aws ec2목록을 볼 수 있게 설정
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeInstances",
+          "ec2:DescribeTags",
+          "ec2:DescribeAvailabilityZones"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}

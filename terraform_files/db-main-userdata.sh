@@ -33,3 +33,30 @@ docker run -d \
   -v /opt/postgres/data:/var/lib/postgresql/data \
   -p 5432:5432 \
   postgres:15
+
+# 모니터링 대상에 포함시키기 위해 ec2생성시 node-exporter가 자동으로 켜지는 설정 추가
+docker rm -f node-exporter || true
+docker run -d \
+  --name node-exporter \
+  --restart always \
+  --pid="host" \
+  -p 9100:9100 \
+  -v /proc:/host/proc:ro \
+  -v /sys:/host/sys:ro \
+  -v /:/rootfs:ro \
+  prom/node-exporter:v1.11.1 \
+  --path.procfs=/host/proc \
+  --path.sysfs=/host/sys \
+  --path.rootfs=/rootfs \
+  --collector.filesystem.mount-points-exclude='^/(sys|proc|dev|host|etc)($|/)'
+
+docker rm -f cadvisor || true
+docker run -d \
+  --name cadvisor \
+  --restart always \
+  -p 8080:8080 \
+  -v /:/rootfs:ro \
+  -v /var/run:/var/run:ro \
+  -v /sys:/sys:ro \
+  -v /var/lib/docker/:/var/lib/docker:ro \
+  gcr.io/cadvisor/cadvisor:v0.55.1

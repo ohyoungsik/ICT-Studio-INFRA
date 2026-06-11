@@ -66,13 +66,17 @@ resource "aws_launch_template" "app_lt" {
   vpc_security_group_ids = [aws_security_group.app.id]
 
   user_data = base64encode(templatefile("${path.module}/../scripts/worker-node-bootstrap.sh", {
-    name_prefix = local.name_prefix
-    aws_region  = var.region
+    name_prefix   = local.name_prefix
+    aws_region    = var.region
+    host_role     = "app" # auto scaling으로 생기는 ec2 감시역 넣기
+    loki_push_url = "http://${aws_instance.bastion.private_ip}:3100/loki/api/v1/push"
   }))
 
   tag_specifications {
     resource_type = "instance"
     tags = {
+      Name        = "${local.name_prefix}-app"
+      Role        = "app"
       Environment = local.env
     }
   }
