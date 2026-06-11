@@ -11,14 +11,15 @@ resource "aws_instance" "db_main" {
     volume_type = "gp3"
   }
 
-  user_data = base64encode(templatefile("${path.module}/db-main-userdata.sh", {
+  user_data = templatefile("${path.module}/db-main-userdata.sh", {
     db_name     = var.db_name
     db_user     = var.db_user
     db_password = var.db_password
-  }))
+  })
 
   tags = {
     Name        = "${local.name_prefix}-db-main"
+    Role        = "db"
     Environment = local.env
   }
 }

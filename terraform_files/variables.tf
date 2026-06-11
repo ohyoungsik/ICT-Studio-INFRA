@@ -80,3 +80,8 @@ variable "max_size" {
   type        = number
   default     = 4
 }
+
+variable "admin_ip" {
+  description = "관리자 접속을 허용할 ip주소 / .tfvars에서 설정"
+  type        = string
+}

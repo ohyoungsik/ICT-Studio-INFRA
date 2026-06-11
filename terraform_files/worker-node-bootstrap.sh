@@ -209,10 +209,154 @@ EOF
 
   log "ALB test nginx container started on port 80"
 }
+# monitoring agent 추가
+setup_monitoring_agent() {
+  local token instance_id private_ip
+
+  token="$(get_imds_token)"
+  instance_id="$(curl -sf -H "X-aws-ec2-metadata-token: $token" \
+    http://169.254.169.254/latest/meta-data/instance-id)"
+  private_ip="$(curl -sf -H "X-aws-ec2-metadata-token: $token" \
+    http://169.254.169.254/latest/meta-data/local-ipv4)"
+
+  mkdir -p /opt/monitoring-agent
+
+  cat > /opt/monitoring-agent/.env <<EOF
+HOST_ROLE=${host_role}
+HOST_NAME=$instance_id
+HOST_IP=$private_ip
+LOKI_PUSH_URL=${loki_push_url}
+EOF
+
+  cat > /opt/monitoring-agent/config.alloy <<'EOF'
+loki.write "default" {
+  endpoint {
+    url = env("LOKI_PUSH_URL")
+  }
+}
+
+local.file_match "system_logs" {
+  path_targets = [
+    {
+      __path__   = "/var/log/syslog",
+      job        = "system",
+      role       = env("HOST_ROLE"),
+      instance   = env("HOST_NAME"),
+      private_ip = env("HOST_IP"),
+    },
+    {
+      __path__   = "/var/log/auth.log",
+      job        = "auth",
+      role       = env("HOST_ROLE"),
+      instance   = env("HOST_NAME"),
+      private_ip = env("HOST_IP"),
+    },
+    {
+      __path__   = "/var/log/*.log",
+      job        = "varlog",
+      role       = env("HOST_ROLE"),
+      instance   = env("HOST_NAME"),
+      private_ip = env("HOST_IP"),
+    },
+  ]
+}
+
+loki.source.file "system_logs" {
+  targets    = local.file_match.system_logs.targets
+  forward_to = [loki.write.default.receiver]
+}
+
+local.file_match "docker_logs" {
+  path_targets = [
+    {
+      __path__   = "/var/lib/docker/containers/*/*.log",
+      job        = "docker",
+      role       = env("HOST_ROLE"),
+      instance   = env("HOST_NAME"),
+      private_ip = env("HOST_IP"),
+    },
+  ]
+}
+
+loki.source.file "docker_logs" {
+  targets    = local.file_match.docker_logs.targets
+  forward_to = [loki.process.docker_logs.receiver]
+}
+
+loki.process "docker_logs" {
+  stage.json {
+    expressions = {
+      output = "log",
+      stream = "stream",
+      time   = "time",
+    }
+  }
+
+  stage.timestamp {
+    source = "time"
+    format = "RFC3339Nano"
+  }
+
+  stage.labels {
+    values = {
+      stream = "",
+    }
+  }
+
+  stage.output {
+    source = "output"
+  }
+
+  forward_to = [loki.write.default.receiver]
+}
+EOF
+
+  docker rm -f node-exporter || true
+  docker run -d \
+    --name node-exporter \
+    --restart always \
+    --pid="host" \
+    -p 9100:9100 \
+    -v /proc:/host/proc:ro \
+    -v /sys:/host/sys:ro \
+    -v /:/rootfs:ro \
+    prom/node-exporter:v1.11.1 \
+    --path.procfs=/host/proc \
+    --path.sysfs=/host/sys \
+    --path.rootfs=/rootfs \
+    --collector.filesystem.mount-points-exclude='^/(sys|proc|dev|host|etc)($|/)'
+
+  docker rm -f cadvisor || true
+  docker run -d \
+    --name cadvisor \
+    --restart always \
+    -p 8080:8080 \
+    -v /:/rootfs:ro \
+    -v /var/run:/var/run:ro \
+    -v /sys:/sys:ro \
+    -v /var/lib/docker/:/var/lib/docker:ro \
+    gcr.io/cadvisor/cadvisor:v0.55.1
+
+  docker rm -f alloy || true
+  docker run -d \
+    --name alloy \
+    --restart always \
+    --env-file /opt/monitoring-agent/.env \
+    -v /opt/monitoring-agent/config.alloy:/etc/alloy/config.alloy:ro \
+    -v /var/log:/var/log:ro \
+    -v /var/lib/docker/containers:/var/lib/docker/containers:ro \
+    -v alloy-data:/var/lib/alloy/data \
+    grafana/alloy:v1.16.2 \
+    run /etc/alloy/config.alloy \
+    --storage.path=/var/lib/alloy/data
+
+  log "Monitoring agent started"
+}
 
 log "Starting worker node bootstrap"
 install_docker
 install_aws_cli
 join_swarm
 setup_alb_test_service
+setup_monitoring_agent
 log "Worker node bootstrap finished"
