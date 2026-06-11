@@ -44,6 +44,16 @@ resource "aws_security_group_rule" "alb_ingress_http" {
   description       = "Public HTTP access for ALB"
 }
 
+resource "aws_security_group_rule" "alb_ingress_portainer" {
+  type              = "ingress"
+  from_port         = 9000
+  to_port           = 9000
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.alb.id
+  description       = "Public Portainer HTTP access via ALB"
+}
+
 resource "aws_security_group_rule" "alb_egress_all" {
   type              = "egress"
   from_port         = 0
@@ -144,6 +154,33 @@ resource "aws_security_group_rule" "master_ingress_ssh_from_bastion" {
   source_security_group_id = aws_security_group.bastion.id
   security_group_id        = aws_security_group.master_node.id
   description              = "SSH from bastion to swarm manager"
+}
+
+# 역할: Bastion 경유 Portainer 웹 UI 접속
+# 용도: 운영자가 Bastion에서 SSH 터널(-L)로 manager의 Portainer에 접근
+# 포트: 8000(Edge), 9000(HTTP), 9443(HTTPS)
+# 흐름: Local PC → Bastion(SSH tunnel) → Manager:8000|9000|9443
+resource "aws_security_group_rule" "master_ingress_portainer_from_bastion" {
+  type                     = "ingress"
+  from_port                = 8000
+  to_port                  = 9443
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.bastion.id
+  security_group_id        = aws_security_group.master_node.id
+  description              = "Portainer UI from bastion (8000, 9000, 9443)"
+}
+
+# 역할: ALB → Portainer 웹 UI (외부 직접 접속)
+# 용도: 인터넷 → ALB:9000 → Manager:9000
+# 흐름: User → ALB → Manager Portainer HTTP
+resource "aws_security_group_rule" "master_ingress_portainer_from_alb" {
+  type                     = "ingress"
+  from_port                = 9000
+  to_port                  = 9000
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.alb.id
+  security_group_id        = aws_security_group.master_node.id
+  description              = "Portainer HTTP from ALB"
 }
 
 # 역할: Swarm 클러스터 관리 API (Control Plane)
@@ -250,7 +287,7 @@ resource "aws_security_group_rule" "master_ingress_swarm_overlay_self" {
 
 # 역할: Manager 아웃바운드 전체 허용
 # 용도: NAT Gateway 경유 Docker Hub/ECR pull, apt, SSM, package download
-# 비고: manager는 ALB 대상이 아니므로 ingress는 SSH + Swarm만 최소 개방
+# 비고: manager는 ALB 대상이 아니므로 ingress는 SSH + Swarm + Bastion→Portainer만 최소 개방
 resource "aws_security_group_rule" "master_egress_all" {
   type              = "egress"
   from_port         = 0

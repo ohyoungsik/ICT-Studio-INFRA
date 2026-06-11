@@ -40,6 +40,11 @@ output "alb_dns_name" {
   value       = aws_lb.application_load_balancer.dns_name
 }
 
+output "portainer_url" {
+  description = "Portainer web UI URL via ALB (HTTP)."
+  value       = "http://${aws_lb.application_load_balancer.dns_name}:9000"
+}
+
 output "alb_arn" {
   description = "Application Load Balancer ARN."
   value       = aws_lb.application_load_balancer.arn
@@ -93,6 +98,7 @@ output "deployment_summary" {
      Deployment Complete!
     ========================================
      ALB DNS      : ${aws_lb.application_load_balancer.dns_name}
+     Portainer    : http://${aws_lb.application_load_balancer.dns_name}:9000
      Bastion IP   : ${aws_instance.bastion.public_ip}
      DB Main IP   : ${aws_instance.db_main.private_ip}
      ASG Name     : ${aws_autoscaling_group.app_asg.name}
