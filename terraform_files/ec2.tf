@@ -5,7 +5,7 @@ data "cloudinit_config" "master_node" {
 
   part {
     content_type = "text/x-shellscript"
-    content      = templatefile("${path.module}/../scripts/master-node-bootstrap.sh", {
+    content = templatefile("${path.module}/../scripts/master-node-bootstrap.sh", {
       name_prefix = local.name_prefix
       aws_region  = var.region
     })
@@ -26,7 +26,7 @@ resource "aws_instance" "master_node" {
   vpc_security_group_ids = [aws_security_group.master_node.id]
   subnet_id              = aws_subnet.private_app[0].id
 
-  user_data = data.cloudinit_config.master_node.rendered
+  user_data_base64 = data.cloudinit_config.master_node.rendered
 
   tags = {
     Name = "${local.name_prefix}-master-node"

@@ -11,7 +11,7 @@ resource "aws_instance" "db_main" {
     volume_type = "gp3"
   }
 
-  user_data = base64encode(templatefile("${path.module}/db-main-userdata.sh", {
+  user_data_base64 = base64encode(templatefile("${path.module}/db-main-userdata.sh", {
     db_name     = var.db_name
     db_user     = var.db_user
     db_password = var.db_password
