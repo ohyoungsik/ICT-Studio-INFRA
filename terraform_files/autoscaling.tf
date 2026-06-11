@@ -23,9 +23,8 @@ resource "aws_autoscaling_group" "app_asg" {
 
   # ELB Health Check 사용: ALB의 /api/health 응답 성공 여부로 인스턴스 상태 판단
   health_check_type = "ELB"
-  # Grace Period: 인스턴스 시작 후 60초 이내는 Health Check 실패해도 교체하지 않음
-  # (Docker 이미지 다운로드 및 서비스 시작 시간 확보)
-  health_check_grace_period = 60
+  # Grace Period: Docker 설치와 /health 서비스 시작 시간 확보
+  health_check_grace_period = 300
 
   tag {
     key                 = "Name"

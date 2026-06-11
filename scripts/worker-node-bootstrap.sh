@@ -205,7 +205,7 @@ EOF
     --restart always \
     -p 80:80 \
     -v /opt/nginx-test:/usr/share/nginx/html:ro \
-    nginx:latest
+    nginx:alpine
 
   log "ALB test nginx container started on port 80"
 }
@@ -355,8 +355,8 @@ EOF
 
 log "Starting worker node bootstrap"
 install_docker
+setup_alb_test_service
 install_aws_cli
 join_swarm
-setup_alb_test_service
 setup_monitoring_agent
 log "Worker node bootstrap finished"
