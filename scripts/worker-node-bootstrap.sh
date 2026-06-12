@@ -12,7 +12,7 @@ AWS_REGION="${aws_region}"
 SSM_MANAGER_IP="/$${NAME_PREFIX}/swarm/manager-ip"
 SSM_WORKER_TOKEN="/$${NAME_PREFIX}/swarm/worker-token"
 # master가 SSM에 값을 쓸 때까지 최대 30회(약 5분) 대기
-MAX_RETRIES=30
+MAX_RETRIES=60
 RETRY_INTERVAL=10
 
 log() {
