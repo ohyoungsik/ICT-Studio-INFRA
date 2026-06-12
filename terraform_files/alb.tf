@@ -1,5 +1,5 @@
 # ==============================================
-# Application Load Balancer (ALB) 설정
+# Application Load Balancer (ALB) 설정 - cicd test
 # ==============================================
 
 resource "aws_lb" "application_load_balancer" {
