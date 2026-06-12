@@ -380,8 +380,8 @@ EOF
     -v /var/lib/docker/containers:/var/lib/docker/containers:ro \
     -v alloy-data:/var/lib/alloy/data \
     grafana/alloy:v1.16.2 \
-    run /etc/alloy/config.alloy \
-    --storage.path=/var/lib/alloy/data
+    run --storage.path=/var/lib/alloy/data \
+    /etc/alloy/config.alloy
 
   log "Monitoring agent started"
 }

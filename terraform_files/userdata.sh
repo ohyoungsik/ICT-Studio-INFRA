@@ -304,39 +304,74 @@ groups:
           description: "{{ $labels.job }} / {{ $labels.instance }} 대상이 30초 이상 응답하지 않아 down으로 간주"
 EOF
 
+cat > /opt/monitoring/prometheus/rules/traffic-alerts.yml <<'EOF'
+groups:
+  - name: traffic-alerts
+    rules:
+      - alert: HighNetworkReceiveTraffic
+        expr: sum by(instance) (rate(node_network_receive_bytes_total{device!~"lo|docker.*|veth.*|br.*|br-.+|flannel.*|cni.*"}[1m])) > 100 * 1024
+        for: 30s
+        labels:
+          severity: warning
+          category: traffic
+        annotations:
+          summary: "서버 인바운드 트래픽 높음"
+          description: "{{ $labels.instance }} 서버의 인바운드 트래픽이 30초 이상 100KB/s를 초과함"
+
+      - alert: HighNetworkTransmitTraffic
+        expr: sum by(instance) (rate(node_network_transmit_bytes_total{device!~"lo|docker.*|veth.*|br.*|br-.+|flannel.*|cni.*"}[1m])) > 100 * 1024
+        for: 30s
+        labels:
+          severity: warning
+          category: traffic
+        annotations:
+          summary: "서버 아웃바운드 트래픽 높음"
+          description: "{{ $labels.instance }} 서버의 아웃바운드 트래픽이 30초 이상 100KB/s를 초과함"
+EOF
+
 cat > /opt/monitoring/prometheus/rules/container-alerts.yml <<'EOF'
 groups:
   - name: container-alerts
     rules:
+      - alert: CadvisorMetricsMissing
+        expr: absent(container_cpu_usage_seconds_total{name!="", image!=""})
+        for: 1m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "cAdvisor 컨테이너 메트릭 수집 중단"
+          description: "Prometheus에 컨테이너 CPU 메트릭이 1분 이상 들어오지 않음"
+
+      - alert: PostgresContainerDown
+        expr: absent(container_cpu_usage_seconds_total{name="postgres-main"})
+        for: 30s
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "PostgreSQL 컨테이너 중단"
+          description: "postgres-main 컨테이너 메트릭이 30초 이상 수집되지 않음"
+
       - alert: HighContainerCPUUsage
-        expr: sum by(name) (rate(container_cpu_usage_seconds_total{name!=""}[5m])) * 100 > 80
+        expr: sum by(instance, name) (rate(container_cpu_usage_seconds_total{name!="", image!=""}[1m])) * 100 > 80
         for: 1m
         labels:
           severity: warning
           category: container
         annotations:
           summary: "컨테이너 CPU 사용률 높음"
-          description: "{{ $labels.name }} 컨테이너 CPU 사용률이 1분 이상 높게 유지됨"
+          description: "{{ $labels.instance }} / {{ $labels.name }} 컨테이너 CPU 사용률이 1분 이상 높게 유지됨"
 
       - alert: HighContainerMemoryUsage
-        expr: container_memory_usage_bytes{name!=""} > 500 * 1024 * 1024
+        expr: container_memory_usage_bytes{name!="", image!=""} > 500 * 1024 * 1024
         for: 1m
         labels:
           severity: warning
           category: container
         annotations:
           summary: "컨테이너 메모리 사용량 높음"
-          description: "{{ $labels.name }} 컨테이너 메모리 사용량이 500MB를 초과함"
-
-      - alert: ContainerDown
-        expr: absent(container_last_seen{name!=""})
-        for: 30s
-        labels:
-          severity: critical
-          category: container
-        annotations:
-          summary: "컨테이너 메트릭 수집 중단"
-          description: "컨테이너 메트릭이 30초 이상 수집되지 않음"
+          description: "{{ $labels.instance }} / {{ $labels.name }} 컨테이너 메모리 사용량이 500MB를 초과함"
 EOF
 
 mkdir -p /opt/monitoring/alertmanager

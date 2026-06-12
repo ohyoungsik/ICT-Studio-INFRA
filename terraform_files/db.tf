@@ -11,11 +11,13 @@ resource "aws_instance" "db_main" {
     volume_type = "gp3"
   }
 
-  user_data_base64 = base64encode(templatefile("${path.module}/db-main-userdata.sh", {
-    db_name     = var.db_name
-    db_user     = var.db_user
-    db_password = var.db_password
-  }))
+  user_data = templatefile("${path.module}/db-main-userdata.sh", {
+    db_name       = var.db_name
+    db_user       = var.db_user
+    db_password   = var.db_password
+    host_role     = "db"
+    loki_push_url = "http://${aws_instance.bastion.private_ip}:3100/loki/api/v1/push"
+  })
 
   tags = {
     Name        = "${local.name_prefix}-db-main"

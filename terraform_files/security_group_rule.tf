@@ -467,3 +467,13 @@ resource "aws_security_group_rule" "app_ingress_cadvisor_from_bastion" {
   security_group_id        = aws_security_group.app.id
   description              = "Prometheus to app cAdvisor"
 }
+
+resource "aws_security_group_rule" "db_ingress_cadvisor_from_bastion" {
+  type                     = "ingress"
+  from_port                = 8080
+  to_port                  = 8080
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.bastion.id
+  security_group_id        = aws_security_group.db.id
+  description              = "Prometheus to db cAdvisor"
+}
