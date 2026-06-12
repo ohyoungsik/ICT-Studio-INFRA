@@ -26,7 +26,8 @@ resource "aws_instance" "master_node" {
   vpc_security_group_ids = [aws_security_group.master_node.id]
   subnet_id              = aws_subnet.private_app[0].id
 
-  user_data_base64 = data.cloudinit_config.master_node.rendered
+  user_data_base64            = data.cloudinit_config.master_node.rendered
+  user_data_replace_on_change = true
 
   tags = {
     Name = "${local.name_prefix}-master-node"

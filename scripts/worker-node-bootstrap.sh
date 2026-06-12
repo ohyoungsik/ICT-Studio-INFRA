@@ -1,17 +1,16 @@
 #!/bin/bash
-# Docker Swarm Worker 노드 초기화 스크립트
-# ASG launch template user_data로 실행: Docker 설치 → SSM에서 join 정보 조회 → swarm join → ALB 테스트 nginx
+# Docker Swarm worker bootstrap.
+# Runs from ASG launch template user_data:
+# install Docker -> start ALB test nginx -> fetch join info from SSM -> join Swarm.
 
 set -euo pipefail
 
-# 부트스트랩 전체 로그를 파일과 콘솔에 동시 기록
 exec > >(tee /var/log/worker-node-bootstrap.log) 2>&1
 
 NAME_PREFIX="${name_prefix}"
 AWS_REGION="${aws_region}"
 SSM_MANAGER_IP="/$${NAME_PREFIX}/swarm/manager-ip"
 SSM_WORKER_TOKEN="/$${NAME_PREFIX}/swarm/worker-token"
-# master가 SSM에 값을 쓸 때까지 최대 30회(약 5분) 대기
 MAX_RETRIES=60
 RETRY_INTERVAL=10
 
@@ -53,12 +52,10 @@ install_aws_cli() {
 
   log "Installing AWS CLI"
   apt-get update -y
-  # SSM Parameter Store에서 join 정보 조회에 사용 (aws ssm get-parameter)
   apt-get install -y awscli
 }
 
 get_imds_token() {
-  # IMDSv2 토큰 발급 (EC2 메타데이터 접근용)
   curl -sf -X PUT "http://169.254.169.254/latest/api/token" \
     -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"
 }
@@ -69,14 +66,12 @@ fetch_swarm_join_info() {
   for attempt in $(seq 1 "$MAX_RETRIES"); do
     log "Fetching Swarm join info from SSM (attempt $attempt/$MAX_RETRIES)"
 
-    # SSM에서 manager 프라이빗 IP 조회
     manager_ip="$(aws ssm get-parameter \
       --region "$AWS_REGION" \
       --name "$SSM_MANAGER_IP" \
       --query 'Parameter.Value' \
       --output text 2>/dev/null || true)"
 
-    # SSM에서 worker join token 조회 (SecureString이므로 --with-decryption 필요)
     worker_token="$(aws ssm get-parameter \
       --region "$AWS_REGION" \
       --name "$SSM_WORKER_TOKEN" \
@@ -84,14 +79,12 @@ fetch_swarm_join_info() {
       --query 'Parameter.Value' \
       --output text 2>/dev/null || true)"
 
-    # 두 값이 모두 있으면 조회 성공
     if [[ -n "$manager_ip" && -n "$worker_token" && "$manager_ip" != "None" && "$worker_token" != "None" ]]; then
       MANAGER_IP="$manager_ip"
       WORKER_TOKEN="$worker_token"
       return 0
     fi
 
-    # master bootstrap 완료 전이면 10초 후 재시도
     sleep "$RETRY_INTERVAL"
   done
 
@@ -103,7 +96,6 @@ join_swarm() {
 
   swarm_state="$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo inactive)"
   if [[ "$swarm_state" == "active" ]]; then
-    # 이미 클러스터에 속해 있으면 join 생략
     log "Node is already part of a Swarm cluster"
     docker node ls 2>/dev/null || true
     return
@@ -115,7 +107,6 @@ join_swarm() {
   fi
 
   log "Joining Swarm cluster at $MANAGER_IP:2377"
-  # worker token으로 manager:2377에 Swarm 클러스터 합류
   docker swarm join --token "$WORKER_TOKEN" "$MANAGER_IP:2377"
 
   token="$(get_imds_token)"
@@ -140,10 +131,8 @@ setup_alb_test_service() {
   az="$(curl -sf -H "X-aws-ec2-metadata-token: $token" \
     http://169.254.169.254/latest/meta-data/placement/availability-zone)"
 
-  # ALB health check 및 테스트 페이지용 정적 파일 디렉터리
   mkdir -p /opt/nginx-test
 
-  # 인스턴스 정보가 포함된 테스트 HTML 생성
   cat > /opt/nginx-test/index.html <<EOF
 <!doctype html>
 <html lang="ko">
@@ -194,12 +183,9 @@ setup_alb_test_service() {
 </html>
 EOF
 
-  # ALB target group health check 경로 (/health)용 응답 파일
   echo "ok" > /opt/nginx-test/health
 
-  # 동일 이름 컨테이너가 있으면 제거 후 재생성
   docker rm -f nginx-test || true
-  # nginx 컨테이너: 호스트 80 → 컨테이너 80, 정적 파일 read-only 마운트
   docker run -d \
     --name nginx-test \
     --restart always \
@@ -209,7 +195,7 @@ EOF
 
   log "ALB test nginx container started on port 80"
 }
-# monitoring agent 추가
+
 setup_monitoring_agent() {
   local token instance_id private_ip
 

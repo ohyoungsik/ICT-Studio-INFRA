@@ -21,6 +21,15 @@ resource "aws_autoscaling_group" "app_asg" {
     version = "$Latest"
   }
 
+  instance_refresh {
+    strategy = "Rolling"
+
+    preferences {
+      instance_warmup        = 300
+      min_healthy_percentage = 50
+    }
+  }
+
   # ELB Health Check 사용: ALB의 /api/health 응답 성공 여부로 인스턴스 상태 판단
   health_check_type = "ELB"
   # Grace Period: Docker 설치와 /health 서비스 시작 시간 확보
