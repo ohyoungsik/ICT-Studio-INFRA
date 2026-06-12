@@ -13,6 +13,8 @@ SSM_MANAGER_IP="/$${NAME_PREFIX}/swarm/manager-ip"
 SSM_WORKER_TOKEN="/$${NAME_PREFIX}/swarm/worker-token"
 MAX_RETRIES=60
 RETRY_INTERVAL=10
+JOIN_MAX_RETRIES=12
+MANAGER_CONNECT_TIMEOUT=3
 
 log() {
   echo "[$(date -Is)] $*"
@@ -91,23 +93,34 @@ fetch_swarm_join_info() {
   return 1
 }
 
-join_swarm() {
-  local swarm_state token private_ip instance_id az
+cleanup_swarm_state() {
+  local swarm_state
 
   swarm_state="$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo inactive)"
+
   if [[ "$swarm_state" == "active" ]]; then
     log "Node is already part of a Swarm cluster"
     docker node ls 2>/dev/null || true
-    return
+    return 0
   fi
 
-  if ! fetch_swarm_join_info; then
-    log "ERROR: Could not fetch Swarm join info from SSM"
-    exit 1
+  if [[ "$swarm_state" == "error" || "$swarm_state" == "pending" ]]; then
+    log "Broken swarm state detected: $swarm_state. Leaving first."
+    docker swarm leave --force || true
+    sleep 3
   fi
 
-  log "Joining Swarm cluster at $MANAGER_IP:2377"
-  docker swarm join --token "$WORKER_TOKEN" "$MANAGER_IP:2377"
+  return 1
+}
+
+manager_port_open() {
+  local manager_ip="$1"
+
+  timeout "$MANAGER_CONNECT_TIMEOUT" bash -c 'cat < /dev/null > /dev/tcp/"$1"/2377' _ "$manager_ip" >/dev/null 2>&1
+}
+
+log_join_metadata() {
+  local token private_ip instance_id az
 
   token="$(get_imds_token)"
   instance_id="$(curl -sf -H "X-aws-ec2-metadata-token: $token" \
@@ -118,6 +131,40 @@ join_swarm() {
     http://169.254.169.254/latest/meta-data/placement/availability-zone)"
 
   log "Swarm join complete (instance=$instance_id ip=$private_ip az=$az)"
+}
+
+join_swarm() {
+  local attempt
+
+  if cleanup_swarm_state; then
+    return
+  fi
+
+  for attempt in $(seq 1 "$JOIN_MAX_RETRIES"); do
+    if ! fetch_swarm_join_info; then
+      log "ERROR: Could not fetch Swarm join info from SSM"
+      exit 1
+    fi
+
+    if ! manager_port_open "$MANAGER_IP"; then
+      log "Manager $MANAGER_IP:2377 is not reachable (attempt $attempt/$JOIN_MAX_RETRIES)"
+      sleep "$RETRY_INTERVAL"
+      continue
+    fi
+
+    log "Joining Swarm cluster at $MANAGER_IP:2377 (attempt $attempt/$JOIN_MAX_RETRIES)"
+    if docker swarm join --token "$WORKER_TOKEN" "$MANAGER_IP:2377"; then
+      log_join_metadata
+      return
+    fi
+
+    log "Swarm join failed. Leaving any partial state before retry."
+    docker swarm leave --force || true
+    sleep "$RETRY_INTERVAL"
+  done
+
+  log "ERROR: Swarm join failed after $JOIN_MAX_RETRIES attempts"
+  exit 1
 }
 
 setup_alb_test_service() {
