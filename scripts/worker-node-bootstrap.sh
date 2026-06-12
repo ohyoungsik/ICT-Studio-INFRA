@@ -1,7 +1,7 @@
 #!/bin/bash
 # Docker Swarm worker bootstrap.
 # Runs from ASG launch template user_data:
-# install Docker -> start ALB test nginx -> fetch join info from SSM -> join Swarm.
+# install Docker -> run React container -> configure Nginx proxy -> fetch join info from SSM -> join Swarm.
 
 set -euo pipefail
 
@@ -15,6 +15,8 @@ MAX_RETRIES=60
 RETRY_INTERVAL=10
 JOIN_MAX_RETRIES=12
 MANAGER_CONNECT_TIMEOUT=3
+REACT_IMAGE="ohyoungsik/ict-studio-fe:latest"
+REACT_CONTAINER_NAME="ict-studio-fe"
 
 log() {
   echo "[$(date -Is)] $*"
@@ -167,80 +169,47 @@ join_swarm() {
   exit 1
 }
 
-setup_alb_test_service() {
-  local token instance_id private_ip az
+setup_react_app() {
+  log "Installing host Nginx"
+  apt-get update -y
+  apt-get install -y nginx
+  systemctl enable nginx
 
-  token="$(get_imds_token)"
-  instance_id="$(curl -sf -H "X-aws-ec2-metadata-token: $token" \
-    http://169.254.169.254/latest/meta-data/instance-id)"
-  private_ip="$(curl -sf -H "X-aws-ec2-metadata-token: $token" \
-    http://169.254.169.254/latest/meta-data/local-ipv4)"
-  az="$(curl -sf -H "X-aws-ec2-metadata-token: $token" \
-    http://169.254.169.254/latest/meta-data/placement/availability-zone)"
+  log "Starting React container"
+  docker rm -f nginx-test || true
+  docker pull "$REACT_IMAGE"
+  docker rm -f "$REACT_CONTAINER_NAME" || true
+  docker run -d \
+    --name "$REACT_CONTAINER_NAME" \
+    --restart always \
+    -p 8080:80 \
+    "$REACT_IMAGE"
 
-  mkdir -p /opt/nginx-test
+  cat > /etc/nginx/sites-available/default <<'EOF'
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
 
-  cat > /opt/nginx-test/index.html <<EOF
-<!doctype html>
-<html lang="ko">
-  <head>
-    <meta charset="utf-8">
-    <title>ICT Studio ALB Test</title>
-    <style>
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        font-family: Arial, "Noto Sans KR", sans-serif;
-        background: #f4f7fb;
-        color: #1f2937;
-      }
-      main {
-        width: min(720px, calc(100% - 40px));
-        padding: 32px;
-        border: 1px solid #d8dee8;
-        border-radius: 8px;
-        background: #ffffff;
-        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
-      }
-      h1 {
-        margin: 0 0 20px;
-        font-size: 32px;
-      }
-      p {
-        margin: 10px 0;
-        font-size: 18px;
-        line-height: 1.6;
-      }
-      strong {
-        color: #0f766e;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>ICT Studio ALB Test</h1>
-      <p>Swarm Worker - Private <strong>$private_ip</strong></p>
-      <p>Instance ID: <strong>$instance_id</strong></p>
-      <p>Availability Zone: <strong>$az</strong></p>
-      <p>ALB routing test success</p>
-    </main>
-  </body>
-</html>
+    location = /health {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
 EOF
 
-  echo "ok" > /opt/nginx-test/health
-
-  docker rm -f nginx-test || true
-  docker run -d \
-    --name nginx-test \
-    --restart always \
-    -p 80:80 \
-    -v /opt/nginx-test:/usr/share/nginx/html:ro \
-    nginx:alpine
-
-  log "ALB test nginx container started on port 80"
+  nginx -t
+  systemctl restart nginx
+  log "React app is running on container port 80 via host port 8080, proxied by Nginx on port 80"
 }
 
 setup_monitoring_agent() {
@@ -363,7 +332,7 @@ EOF
   docker run -d \
     --name cadvisor \
     --restart always \
-    -p 8080:8080 \
+    -p 8081:8080 \
     -v /:/rootfs:ro \
     -v /var/run:/var/run:ro \
     -v /sys:/sys:ro \
@@ -388,7 +357,7 @@ EOF
 
 log "Starting worker node bootstrap"
 install_docker
-setup_alb_test_service
+setup_react_app
 install_aws_cli
 join_swarm
 setup_monitoring_agent

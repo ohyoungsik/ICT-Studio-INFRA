@@ -460,8 +460,8 @@ resource "aws_security_group_rule" "db_ingress_node_exporter_from_bastion" {
 # bastion prometheus > app cadvisor
 resource "aws_security_group_rule" "app_ingress_cadvisor_from_bastion" {
   type                     = "ingress"
-  from_port                = 8080
-  to_port                  = 8080
+  from_port                = 8081
+  to_port                  = 8081
   protocol                 = "tcp"
   source_security_group_id = aws_security_group.bastion.id
   security_group_id        = aws_security_group.app.id

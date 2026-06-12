@@ -214,7 +214,7 @@ scrape_configs: # 타겟 수집 설정
   - job_name: "app-cadvisor"
     ec2_sd_configs:
       - region: ap-northeast-2
-        port: 8080
+        port: 8081
     relabel_configs:
       - source_labels: [__meta_ec2_tag_Role]
         regex: app
