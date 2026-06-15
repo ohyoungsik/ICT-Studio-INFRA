@@ -95,6 +95,20 @@ output "bastion_public_ip" {
   value       = aws_instance.bastion.public_ip
 }
 
+output "master_node_private_ip" {
+  description = "Swarm manager / Redis host private IP."
+  value       = aws_instance.master_node.private_ip
+}
+
+output "redis_ssm_parameters" {
+  description = "SSM Parameter Store paths for Redis connection."
+  value = {
+    host     = "/${local.name_prefix}/redis/host"
+    port     = "/${local.name_prefix}/redis/port"
+    password = "/${local.name_prefix}/redis/password"
+  }
+}
+
 output "deployment_summary" {
   description = "Deployment result summary."
   value       = <<-EOT
@@ -106,6 +120,8 @@ output "deployment_summary" {
      Portainer    : http://${aws_lb.application_load_balancer.dns_name}:9000
      Bastion IP   : ${aws_instance.bastion.public_ip}
      DB Main IP   : ${aws_instance.db_main.private_ip}
+     Master IP    : ${aws_instance.master_node.private_ip} (Swarm / Redis)
+     Redis SSM    : /${local.name_prefix}/redis/*
      ASG Name     : ${aws_autoscaling_group.app_asg.name}
      Key Pair     : ${aws_key_pair.app_key.key_name}
      Key Secret   : ${aws_secretsmanager_secret.private_key.name}

@@ -11,6 +11,9 @@ NAME_PREFIX="${name_prefix}"
 AWS_REGION="${aws_region}"
 SSM_MANAGER_IP="/$${NAME_PREFIX}/swarm/manager-ip"
 SSM_WORKER_TOKEN="/$${NAME_PREFIX}/swarm/worker-token"
+SSM_REDIS_HOST="/$${NAME_PREFIX}/redis/host"
+SSM_REDIS_PORT="/$${NAME_PREFIX}/redis/port"
+SSM_REDIS_PASSWORD="/$${NAME_PREFIX}/redis/password"
 MAX_RETRIES=60
 RETRY_INTERVAL=10
 JOIN_MAX_RETRIES=12
@@ -95,6 +98,48 @@ fetch_swarm_join_info() {
   done
 
   return 1
+}
+
+fetch_redis_config() {
+  local attempt host port password
+
+  for attempt in $(seq 1 "$MAX_RETRIES"); do
+    log "Fetching Redis config from SSM (attempt $attempt/$MAX_RETRIES)"
+
+    host="$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "$SSM_REDIS_HOST" \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+
+    port="$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "$SSM_REDIS_PORT" \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+
+    password="$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "$SSM_REDIS_PASSWORD" \
+      --with-decryption \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+
+    if [[ -n "$host" && -n "$port" && -n "$password" && "$host" != "None" && "$port" != "None" && "$password" != "None" ]]; then
+      REDIS_HOST="$host"
+      REDIS_PORT="$port"
+      REDIS_PASSWORD="$password"
+      return 0
+    fi
+
+    sleep "$RETRY_INTERVAL"
+  done
+
+  return 1
+}
+
+redis_port_open() {
+  timeout "$MANAGER_CONNECT_TIMEOUT" bash -c 'cat < /dev/null > /dev/tcp/"$1"/"$2"' _ "$REDIS_HOST" "$REDIS_PORT" >/dev/null 2>&1
 }
 
 cleanup_swarm_state() {
@@ -223,6 +268,23 @@ EOF
 }
 
 setup_backend_app() {
+  local -a redis_env=()
+
+  if fetch_redis_config; then
+    if redis_port_open; then
+      log "Redis reachable at $REDIS_HOST:$REDIS_PORT"
+      redis_env=(
+        -e "REDIS_HOST=$REDIS_HOST"
+        -e "REDIS_PORT=$REDIS_PORT"
+        -e "REDIS_PASSWORD=$REDIS_PASSWORD"
+      )
+    else
+      log "WARNING: Redis config found but $REDIS_HOST:$REDIS_PORT is not reachable yet"
+    fi
+  else
+    log "WARNING: Redis config not available from SSM; starting backend without Redis env"
+  fi
+
   log "Starting Backend container"
   docker pull "$BACKEND_IMAGE"
   docker rm -f "$BACKEND_CONTAINER_NAME" || true
@@ -231,6 +293,7 @@ setup_backend_app() {
     --restart always \
     -p 8000:8000 \
     -e PYTHONUNBUFFERED=1 \
+    "$${redis_env[@]}" \
     "$BACKEND_IMAGE"
 
   for attempt in $(seq 1 "$MAX_RETRIES"); do
@@ -392,9 +455,9 @@ EOF
 
 log "Starting worker node bootstrap"
 install_docker
+install_aws_cli
 setup_backend_app
 setup_react_app
-install_aws_cli
 join_swarm
 setup_monitoring_agent
 log "Worker node bootstrap finished"
