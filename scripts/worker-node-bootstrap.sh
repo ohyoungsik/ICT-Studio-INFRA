@@ -230,6 +230,7 @@ setup_backend_app() {
     --name "$BACKEND_CONTAINER_NAME" \
     --restart always \
     -p 8000:8000 \
+    -e PYTHONUNBUFFERED=1 \
     "$BACKEND_IMAGE"
 
   for attempt in $(seq 1 "$MAX_RETRIES"); do

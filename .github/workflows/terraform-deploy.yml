@@ -46,3 +46,11 @@ jobs:
 
       - name: Terraform apply
         run: terraform -chdir=terraform_files apply -auto-approve tfplan
+
+      - name: Start ASG instance refresh
+        run: |
+          ASG_NAME=$(terraform -chdir=terraform_files output -raw asg_name)
+          aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name "$ASG_NAME" \
+            --strategy Rolling \
+            --preferences '{"MinHealthyPercentage":50,"InstanceWarmup":300}'
