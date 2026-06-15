@@ -19,11 +19,6 @@ REACT_IMAGE="ohyoungsik/ict-studio-fe:latest"
 REACT_CONTAINER_NAME="ict-studio-fe"
 BACKEND_IMAGE="ohyoungsik/ict-studio-be:latest"
 BACKEND_CONTAINER_NAME="ict-studio-be"
-DB_HOST="${db_host}"
-DB_PORT="${db_port}"
-DB_NAME="${db_name}"
-DB_USER="${db_user}"
-DB_PASSWORD="${db_password}"
 
 log() {
   echo "[$(date -Is)] $*"
@@ -235,11 +230,6 @@ setup_backend_app() {
     --name "$BACKEND_CONTAINER_NAME" \
     --restart always \
     -p 8000:8000 \
-    -e DB_HOST="$DB_HOST" \
-    -e DB_PORT="$DB_PORT" \
-    -e DB_NAME="$DB_NAME" \
-    -e DB_USER="$DB_USER" \
-    -e DB_PASSWORD="$DB_PASSWORD" \
     "$BACKEND_IMAGE"
 
   for attempt in $(seq 1 "$MAX_RETRIES"); do
