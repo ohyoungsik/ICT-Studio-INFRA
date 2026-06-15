@@ -218,6 +218,64 @@ EOF
   nginx -t
   systemctl restart nginx
   log "React app is running on container port 80 via host port 8080, proxied by Nginx on port 80"
+setup_alb_fallback_service() {
+  log "Starting temporary nginx health responder on port 80"
+
+  mkdir -p /opt/nginx-test
+  echo "ok" > /opt/nginx-test/health
+  echo "bootstrap in progress" > /opt/nginx-test/index.html
+
+  docker rm -f nginx-test ict-studio-be || true
+  docker run -d \
+    --name nginx-test \
+    --restart always \
+    -p 80:80 \
+    -v /opt/nginx-test:/usr/share/nginx/html:ro \
+    nginx:alpine
+
+  log "Temporary nginx health responder started on port 80"
+}
+
+setup_backend_service() {
+  local repo_dir="/opt/ict-studio-be"
+  local image_name="ict-studio-be:local"
+
+  log "Deploying ICT-Studio-BE FastAPI backend"
+
+  apt-get install -y git
+
+  if [[ -d "$repo_dir/.git" ]]; then
+    log "Updating backend repository in $repo_dir"
+    git -C "$repo_dir" fetch --depth 1 origin "${backend_repo_branch}"
+    git -C "$repo_dir" checkout "${backend_repo_branch}"
+    git -C "$repo_dir" reset --hard "origin/${backend_repo_branch}"
+  else
+    log "Updating backend repository in $repo_dir"
+    rm -rf "$repo_dir"
+    git clone --depth 1 --branch "${backend_repo_branch}" "${backend_repo_url}" "$repo_dir"
+  fi
+
+  if [[ ! -f "$repo_dir/Dockerfile" ]]; then
+    log "ERROR: Dockerfile not found in ${backend_repo_url} (${backend_repo_branch})"
+    log "Keeping nginx fallback on port 80 until backend image is available"
+    return 1
+  fi
+
+  if ! docker build -t "$image_name" "$repo_dir"; then
+    log "ERROR: Docker build failed for ICT-Studio-BE"
+    log "Keeping nginx fallback on port 80"
+    return 1
+  fi
+
+  docker rm -f ict-studio-be nginx-test || true
+  docker run -d \
+    --name ict-studio-be \
+    --restart always \
+    -p 80:8000 \
+    -e PYTHONUNBUFFERED=1 \
+    "$image_name"
+
+  log "ICT-Studio-BE container started on port 80"
 }
 
 setup_monitoring_agent() {
@@ -366,6 +424,8 @@ EOF
 log "Starting worker node bootstrap"
 install_docker
 setup_react_app
+setup_alb_fallback_service
+setup_backend_service || true
 install_aws_cli
 join_swarm
 setup_monitoring_agent
