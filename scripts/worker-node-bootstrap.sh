@@ -235,11 +235,15 @@ setup_backend_app() {
     --name "$BACKEND_CONTAINER_NAME" \
     --restart always \
     -p 8000:8000 \
+<<<<<<< Updated upstream
     -e DB_HOST="$DB_HOST" \
     -e DB_PORT="$DB_PORT" \
     -e DB_NAME="$DB_NAME" \
     -e DB_USER="$DB_USER" \
     -e DB_PASSWORD="$DB_PASSWORD" \
+=======
+    -e PYTHONUNBUFFERED=1 \
+>>>>>>> Stashed changes
     "$BACKEND_IMAGE"
 
   for attempt in $(seq 1 "$MAX_RETRIES"); do
