@@ -17,6 +17,13 @@ JOIN_MAX_RETRIES=12
 MANAGER_CONNECT_TIMEOUT=3
 REACT_IMAGE="ohyoungsik/ict-studio-fe:latest"
 REACT_CONTAINER_NAME="ict-studio-fe"
+BACKEND_IMAGE="ohyoungsik/ict-studio-be:latest"
+BACKEND_CONTAINER_NAME="ict-studio-be"
+DB_HOST="${db_host}"
+DB_PORT="${db_port}"
+DB_NAME="${db_name}"
+DB_USER="${db_user}"
+DB_PASSWORD="${db_password}"
 
 log() {
   echo "[$(date -Is)] $*"
@@ -220,6 +227,35 @@ EOF
   log "React app is running on container port 80 via host port 8080, proxied by Nginx on port 80"
 }
 
+setup_backend_app() {
+  log "Starting Backend container"
+  docker pull "$BACKEND_IMAGE"
+  docker rm -f "$BACKEND_CONTAINER_NAME" || true
+  docker run -d \
+    --name "$BACKEND_CONTAINER_NAME" \
+    --restart always \
+    -p 8000:8000 \
+    -e DB_HOST="$DB_HOST" \
+    -e DB_PORT="$DB_PORT" \
+    -e DB_NAME="$DB_NAME" \
+    -e DB_USER="$DB_USER" \
+    -e DB_PASSWORD="$DB_PASSWORD" \
+    "$BACKEND_IMAGE"
+
+  for attempt in $(seq 1 "$MAX_RETRIES"); do
+    if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
+      log "Backend health check passed"
+      return
+    fi
+
+    log "Waiting for Backend health check (attempt $attempt/$MAX_RETRIES)"
+    sleep "$RETRY_INTERVAL"
+  done
+
+  log "WARNING: Backend health check failed; continuing bootstrap so the instance can finish initialization"
+  docker logs "$BACKEND_CONTAINER_NAME" || true
+}
+
 setup_monitoring_agent() {
   local token instance_id private_ip
 
@@ -365,6 +401,7 @@ EOF
 
 log "Starting worker node bootstrap"
 install_docker
+setup_backend_app
 setup_react_app
 install_aws_cli
 join_swarm

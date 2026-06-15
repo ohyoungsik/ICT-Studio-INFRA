@@ -50,6 +50,11 @@ output "alb_arn" {
   value       = aws_lb.application_load_balancer.arn
 }
 
+output "backend_target_group_arn" {
+  description = "Backend target group ARN."
+  value       = aws_lb_target_group.backend.arn
+}
+
 output "asg_name" {
   description = "Auto Scaling Group name."
   value       = aws_autoscaling_group.app_asg.name
