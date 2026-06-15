@@ -47,10 +47,15 @@ Swarm 외부에서 테스트할 때는 HAProxy가 배치된 `advancedproject:543
 
 ```text
 postgres-ha/
+├── backup/
 ├── Dockerfile
 ├── README.md
 ├── haproxy.cfg
 ├── init.sql
+├── scripts/
+│   ├── backup.sh
+│   ├── prepare-data-dirs.sh
+│   └── restore.sh
 └── stack.yml
 ```
 
@@ -71,16 +76,55 @@ postgres-ha/
 docker node ls
 ```
 
-## 클러스터 생성
+## 데이터 디렉터리 준비
 
-Swarm manager 노드인 `advancedproject`에서 실행한다.
+`stack.yml`은 PostgreSQL 데이터 디렉터리를 노드별 bind mount로 연결한다.  
+따라서 `docker stack deploy` 실행 전에 각 노드에서 host path를 먼저 생성하고 권한을 맞춘다.
+
+아래 스크립트는 `projectmain`, `projectrep1`, `advancedproject`에 접속해 필요한 디렉터리를 자동으로 준비한다.
 
 ```bash
-docker stack deploy -c stack.yml postgres-ha
+./scripts/prepare-data-dirs.sh
 ```
 
+기본 SSH 사용자는 현재 로컬 사용자이다. 다른 SSH 사용자를 써야 하면 아래처럼 실행한다.
+
+```bash
+SSH_USER=ubuntu ./scripts/prepare-data-dirs.sh
+```
+
+SSH key 옵션이 필요하면 `SSH_OPTS`로 전달한다.
+
+```bash
+SSH_USER=ubuntu SSH_OPTS="-i ~/.ssh/project-key.pem" ./scripts/prepare-data-dirs.sh
+```
+
+스크립트가 각 노드에서 실행하는 작업은 다음과 같다.
+
+```text
+mkdir -p <host-path>
+chown -R 1001:1001 <host-path>
+chmod 700 <host-path>
+```
+
+## 클러스터 생성
+
 `stack.yml`은 Dockerfile을 직접 빌드하지 않는다.  
-1회 배포를 위해 `bitnamilegacy/postgresql-repmgr:16`과 `haproxy:2.9` 이미지를 사용한다.
+따라서 `docker stack deploy -c stack.yml postgres-ha` 실행 전에 PostgreSQL 커스텀 이미지를 Docker Hub에 push해야 한다.
+
+```bash
+export DOCKERHUB_ID=wodurl
+docker build -t ${DOCKERHUB_ID}/postgres-ha-repmgr:16 .
+docker login
+docker push ${DOCKERHUB_ID}/postgres-ha-repmgr:16
+```
+
+그 다음 Swarm manager 노드인 `advancedproject`에서 같은 환경 변수를 지정한 뒤 stack을 배포한다.
+
+```bash
+export DOCKERHUB_ID=wodurl
+docker stack deploy --with-registry-auth -c stack.yml postgres-ha
+```
 
 ## 상태 확인
 
@@ -142,6 +186,138 @@ database=ticketing
 user=appuser
 password=app_password
 ```
+
+## 데이터 백업
+
+PostgreSQL 데이터는 `pg_dump`로 SQL dump 파일을 생성해 로컬 `backup/` 디렉터리에 저장한다.
+
+```text
+PostgreSQL
+↓
+pg_dump
+↓
+Local Backup Directory
+```
+
+기본 실행 명령은 아래와 같다.
+
+```bash
+./scripts/backup.sh
+```
+
+기본 접속 대상은 HAProxy가 노출하는 Primary 라우팅 엔드포인트이다.
+
+| 항목 | 기본값 |
+| --- | --- |
+| Host | `advancedproject` |
+| Port | `5432` |
+| Database | `ticketing` |
+| User | `postgres` |
+| Backup Directory | `backup/` |
+
+백업 파일명은 timestamp를 포함한다.
+
+```text
+backup/ticketing_YYYYMMDD_HHMMSS.sql
+```
+
+예시는 다음과 같다.
+
+```text
+backup/ticketing_20260615_120000.sql
+```
+
+필요하면 환경 변수로 접속 정보를 바꿀 수 있다.
+
+```bash
+PGHOST=localhost PGPORT=5432 ./scripts/backup.sh
+```
+
+## 백업 파일 확인
+
+```bash
+ls -al backup/
+```
+
+## 데이터 복구
+
+생성된 dump 파일을 지정해 PostgreSQL에 복구한다.
+
+```bash
+./scripts/restore.sh backup/<dump-file>
+```
+
+예시는 다음과 같다.
+
+```bash
+./scripts/restore.sh backup/ticketing_20260615_120000.sql
+```
+
+`.sql` 파일은 `psql`로 복구한다.  
+향후 `pg_dump -Fc` 같은 custom dump 형식을 사용할 경우 `restore.sh`는 `pg_restore`로 복구한다.
+
+복구 역시 기본적으로 HAProxy를 통해 현재 Primary에 접속한다.  
+필요하면 백업과 동일하게 환경 변수로 접속 정보를 바꿀 수 있다.
+
+```bash
+PGHOST=localhost PGPORT=5432 ./scripts/restore.sh backup/ticketing_20260615_120000.sql
+```
+
+## PostgreSQL 클라이언트 도구
+
+`backup.sh`와 `restore.sh`는 아래 도구를 사용한다.
+
+```text
+pg_dump
+psql
+pg_restore
+```
+
+현재 PostgreSQL 컨테이너는 `bitnamilegacy/postgresql-repmgr:16` 이미지를 사용한다.  
+이 이미지는 PostgreSQL 서버와 클라이언트 도구를 포함하므로 컨테이너 내부에서 dump와 restore를 수행할 수 있다.
+
+로컬 서버에서 스크립트를 실행하려면 로컬에도 PostgreSQL 클라이언트 도구가 설치되어 있어야 한다.
+
+## 향후 Terraform 확장 계획
+
+현재 백업 구조는 로컬 저장소 기반이다.
+
+```text
+PostgreSQL
+↓
+pg_dump
+↓
+Local Backup Directory
+```
+
+향후 AWS 인프라로 확장하면 동일한 dump 파일 생성 흐름 뒤에 S3 업로드 단계를 추가한다.
+
+```text
+PostgreSQL
+↓
+pg_dump
+↓
+AWS S3 Bucket
+```
+
+Terraform 적용 시 아래 리소스와 구성을 추가할 예정이다.
+
+```text
+AWS S3 Bucket 생성
+IAM Role 생성
+AWS CLI 구성
+```
+
+S3 업로드 예시는 다음과 같다.
+
+```bash
+aws s3 cp \
+backup/ticketing_20260615_120000.sql \
+s3://postgres-backup-bucket/
+```
+
+현재 작업 범위에서는 S3 관련 실제 코드를 작성하지 않는다.  
+대신 `backup/` 디렉터리에 dump 파일을 먼저 생성하는 구조를 유지해, 이후 `aws s3 cp` 단계만 쉽게 추가할 수 있게 한다.
 
 ## repmgr Failover 동작
 
@@ -510,38 +686,66 @@ psql -h advancedproject -p 5432 -U appuser -d ticketing -c "SELECT b.booking_id,
 
 ## Volume 정책
 
-각 PostgreSQL 서비스는 독립 local volume을 사용한다.
+각 PostgreSQL 서비스는 노드별 로컬 디렉터리를 bind mount로 사용한다.
 
-| 서비스 | Volume |
-| --- | --- |
-| Primary | `primary_data` |
-| Replica1 | `replica1_data` |
-| Replica2 | `replica2_data` |
+| 서비스 | Swarm Node Hostname | Host Path | Container Path |
+| --- | --- | --- | --- |
+| Primary | `projectmain` | `/data/postgres/primary` | `/bitnami/postgresql` |
+| Replica1 | `projectrep1` | `/data/postgres/replica1` | `/bitnami/postgresql` |
+| Replica2 | `advancedproject` | `/data/postgres/replica2` | `/bitnami/postgresql` |
 
-NFS 같은 공유 스토리지는 사용하지 않는다.
+각 경로는 해당 노드의 독립 로컬 디스크 경로여야 한다.  
+NFS 같은 공유 스토리지나 여러 PostgreSQL 컨테이너가 동시에 접근하는 공용 디렉터리는 사용하지 않는다.
+
+배포 전에 아래 스크립트로 각 노드의 디렉터리를 자동 생성한다.
+
+```bash
+./scripts/prepare-data-dirs.sh
+```
+
+스크립트는 각 노드에서 아래 작업을 실행한다.
+
+```text
+mkdir -p <host-path>
+chown -R 1001:1001 <host-path>
+chmod 700 <host-path>
+```
+
+`1001:1001`은 Bitnami PostgreSQL 컨테이너가 사용하는 기본 비root 사용자이다.  
+이 권한이 맞지 않으면 PostgreSQL이 데이터 디렉터리에 파일을 만들지 못해 컨테이너가 시작되지 않을 수 있다.
 
 이유는 다음과 같다.
 
 - PostgreSQL 데이터 디렉터리는 여러 인스턴스가 동시에 공유해서 쓰면 데이터 손상 위험이 있다.
 - Streaming Replication은 각 노드가 독립 데이터 디렉터리를 갖는 구조가 기본이다.
+- bind mount는 운영자가 데이터 위치, 디스크 용량, 백업 대상을 명확하게 관리하기 쉽다.
 - 장애 복구는 공유 디스크가 아니라 replication, backup, WAL archive, pg_rewind 정책으로 처리해야 한다.
 
 ## Dockerfile 사용 방식
 
-`stack.yml`은 1회 배포를 위해 사전 빌드된 이미지를 직접 사용한다.  
-`Dockerfile`은 향후 CI/CD에서 커스텀 이미지를 만들 때 사용한다.
+`Dockerfile`은 PostgreSQL HA 노드들이 공통으로 사용할 커스텀 이미지를 만든다.  
+`stack.yml`은 이 이미지를 Docker Hub에서 pull하고, 노드별 역할/볼륨/배치 정보만 런타임에 주입한다.
 
 예시:
 
 ```bash
-docker build -t your-dockerhub-id/postgres-ha-repmgr:16 .
-docker push your-dockerhub-id/postgres-ha-repmgr:16
+export DOCKERHUB_ID=wodurl
+docker build -t ${DOCKERHUB_ID}/postgres-ha-repmgr:16 .
+docker login
+docker push ${DOCKERHUB_ID}/postgres-ha-repmgr:16
 ```
 
-그 다음 `stack.yml`의 image 값을 교체한다.
+`stack.yml`은 `DOCKERHUB_ID` 환경 변수를 사용해 이미지를 참조한다.
 
 ```yaml
-image: your-dockerhub-id/postgres-ha-repmgr:16
+image: ${DOCKERHUB_ID}/postgres-ha-repmgr:16
+```
+
+배포 전 같은 shell에서 환경 변수를 유지한 상태로 실행한다.
+
+```bash
+export DOCKERHUB_ID=wodurl
+docker stack deploy --with-registry-auth -c stack.yml postgres-ha
 ```
 
 ## Terraform 확장 방향

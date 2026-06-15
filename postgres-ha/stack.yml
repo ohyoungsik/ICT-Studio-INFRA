@@ -4,7 +4,8 @@ version: "3.8"
 # Docker Swarm Stack: PostgreSQL HA with repmgr + HAProxy
 # ---------------------------------------------------------------------------
 # 배포 명령:
-#   docker stack deploy -c stack.yml postgres-ha
+#   export DOCKERHUB_ID=wodurl
+#   docker stack deploy --with-registry-auth -c stack.yml postgres-ha
 #
 # 설계 요약:
 # - primary  : projectmain 노드에 고정 배치되는 초기 Primary
@@ -16,14 +17,14 @@ version: "3.8"
 #
 # 운영 참고:
 # - docker stack deploy는 Dockerfile을 직접 빌드하지 않는다.
-# - 1회 배포 가능하도록 repmgr가 포함된 공개 이미지를 사용한다.
-# - 운영에서는 GitHub Actions에서 Dockerfile 기반 이미지를 빌드/푸시한 뒤 image 값을 교체한다.
+# - 배포 전 Dockerfile 기반 이미지를 Docker Hub에 push해야 한다.
+# - DOCKERHUB_ID 환경 변수로 Docker Hub namespace를 주입한다.
 # ---------------------------------------------------------------------------
 
 x-postgres-common: &postgres-common
-  # repmgr가 포함된 PostgreSQL 16 이미지이다.
-  # bitnami/postgresql-repmgr 계열은 환경 변수로 repmgr.conf와 PostgreSQL replication 구성을 생성한다.
-  image: bitnamilegacy/postgresql-repmgr:16
+  # repmgr가 포함된 PostgreSQL 16 커스텀 이미지이다.
+  # OS 패키지와 init.sql 같은 공통 파일은 Dockerfile에서 이미지에 포함한다.
+  image: ${DOCKERHUB_ID}/postgres-ha-repmgr:16
   networks:
     - postgres_net
   environment: &postgres-common-env
@@ -115,16 +116,13 @@ services:
       REPMGR_NODE_NETWORK_NAME: primary
       # 초기 Primary이며 장애 후 재합류 시에는 repmgr 상태에 따라 standby가 될 수 있다.
       REPMGR_NODE_PRIORITY: "100"
-    configs:
-      # init.sql은 최초 Primary 초기화 시 실행된다.
-      # Replica는 Primary를 clone하므로 application schema도 함께 복제된다.
-      - source: init_sql
-        target: /docker-entrypoint-initdb.d/01-init.sql
-        mode: 0444
     volumes:
-      # Primary 전용 local volume이다.
-      # PostgreSQL 데이터 디렉터리는 공유 스토리지로 동시에 쓰면 안 되므로 노드별 독립 volume을 사용한다.
-      - primary_data:/bitnami/postgresql
+      # Primary 전용 bind mount이다.
+      # projectmain 노드의 로컬 디렉터리를 PostgreSQL 데이터 디렉터리로 사용한다.
+      # 이 경로는 다른 DB 노드와 공유하면 안 된다.
+      - type: bind
+        source: /data/postgres/primary
+        target: /bitnami/postgresql
     deploy:
       replicas: 1
       restart_policy:
@@ -149,8 +147,11 @@ services:
       # Primary 장애 시 repmgr가 후보를 평가할 때 replica2보다 높은 우선순위를 갖는다.
       REPMGR_NODE_PRIORITY: "90"
     volumes:
-      # Replica1 전용 local volume이다.
-      - replica1_data:/bitnami/postgresql
+      # Replica1 전용 bind mount이다.
+      # projectrep1 노드의 로컬 디렉터리를 PostgreSQL 데이터 디렉터리로 사용한다.
+      - type: bind
+        source: /data/postgres/replica1
+        target: /bitnami/postgresql
     deploy:
       replicas: 1
       restart_policy:
@@ -174,8 +175,11 @@ services:
       # Replica2는 advancedproject에 위치하며, Replica1 다음 승격 후보이다.
       REPMGR_NODE_PRIORITY: "80"
     volumes:
-      # Replica2 전용 local volume이다.
-      - replica2_data:/bitnami/postgresql
+      # Replica2 전용 bind mount이다.
+      # advancedproject 노드의 로컬 디렉터리를 PostgreSQL 데이터 디렉터리로 사용한다.
+      - type: bind
+        source: /data/postgres/replica2
+        target: /bitnami/postgresql
     deploy:
       replicas: 1
       restart_policy:
@@ -243,21 +247,7 @@ networks:
     driver: overlay
     attachable: true
 
-volumes:
-  # 각 DB는 독립 local volume을 사용한다.
-  # NFS 같은 공유 스토리지는 PostgreSQL 데이터 파일 동시 접근 위험이 있어 사용하지 않는다.
-  primary_data:
-    driver: local
-  replica1_data:
-    driver: local
-  replica2_data:
-    driver: local
-
 configs:
-  init_sql:
-    # Primary 최초 초기화 시 실행할 SQL 파일이다.
-    # Swarm config로 주입해 bind mount 없이 stack deploy 1회로 배포한다.
-    file: ./init.sql
   haproxy_cfg:
     # HAProxy routing과 Primary 판별 health check 설정이다.
     file: ./haproxy.cfg

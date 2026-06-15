@@ -1,9 +1,9 @@
 # ---------------------------------------------------------------------------
 # PostgreSQL HA Custom Image Template
 # ---------------------------------------------------------------------------
-# 이 Dockerfile은 GitHub Actions나 사내 CI/CD에서 커스텀 이미지를 만들 때 사용하는 예시이다.
-# stack.yml은 docker stack deploy 1회 실행을 위해 사전 빌드된 bitnamilegacy/postgresql-repmgr:16 이미지를 직접 사용한다.
-# 운영에서는 이 Dockerfile로 이미지를 빌드하고, 보안 스캔 후 registry에 push한 뒤 stack.yml의 image 값을 교체한다.
+# 이 Dockerfile은 PostgreSQL HA 노드들이 공통으로 사용할 커스텀 이미지를 만든다.
+# stack.yml은 이 이미지를 Docker Hub에서 pull하고, 노드별 역할/볼륨/배치 정보만 런타임에 주입한다.
+# 운영에서는 CI/CD에서 이미지를 빌드하고 보안 스캔 후 registry에 push한다.
 # ---------------------------------------------------------------------------
 
 # repmgr가 포함된 PostgreSQL 16 이미지를 기반으로 사용한다.
@@ -27,8 +27,8 @@ RUN install_packages \
         netcat-openbsd \
         procps
 
-# init.sql은 PostgreSQL 최초 초기화 시 실행된다.
-# stack.yml에서는 Swarm config로 주입하지만, 커스텀 이미지 배포를 선택할 경우에도 동일한 SQL을 포함할 수 있다.
+# init.sql은 Primary의 PostgreSQL 최초 초기화 시 실행된다.
+# 같은 이미지를 Replica도 사용하지만, Replica는 Primary를 clone하므로 스키마도 함께 복제된다.
 COPY init.sql /docker-entrypoint-initdb.d/01-init.sql
 
 # Bitnami 계열 이미지는 비root 사용자 1001로 실행하는 것이 기본이다.
