@@ -143,16 +143,16 @@ services:
     restart: unless-stopped
     networks:
       - monitoring
-  # alertmanager-discord: # discord webhook
-  #   image: benjojo/alertmanager-discord # discord 전송용 보조 어댑터로 버전이 필요없음
-  #   container_name: alertmanager-discord
-  #   environment: # 서버설정 - 연동 - 웹후크
-  #     DISCORD_WEBHOOK: "https://discord.com/api/webhooks/1511180854485979297/WmkVLKs4NRQv7c8rApwM5WxNsecD7Kyg2PRxH-NJ4hnbGtxBQ9fckZczDQapjt5WT73G"
-  #   ports:
-  #     - "9094:9094"
-  #   restart: unless-stopped
-  #   networks:
-  #     - monitoring
+  alertmanager-discord: # discord webhook
+    image: benjojo/alertmanager-discord # discord 전송용 보조 어댑터로 버전이 필요없음
+    container_name: alertmanager-discord
+    environment: # 서버설정 - 연동 - 웹후크
+      DISCORD_WEBHOOK: "https://discord.com/api/webhooks/1511180854485979297/WmkVLKs4NRQv7c8rApwM5WxNsecD7Kyg2PRxH-NJ4hnbGtxBQ9fckZczDQapjt5WT73G"
+    ports:
+      - "9094:9094"
+    restart: unless-stopped
+    networks:
+      - monitoring
   loki:
     image: grafana/loki:3.7.2
     container_name: loki
