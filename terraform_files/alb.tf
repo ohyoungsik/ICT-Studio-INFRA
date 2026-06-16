@@ -41,6 +41,29 @@ resource "aws_lb_target_group" "app" {
 }
 # HTTP 리스너: 다가오는 HTTP 요청을 대상 그룹으로 라우팅
 
+resource "aws_lb_target_group" "backend" {
+  name                 = "${local.name_prefix}-backend-tg"
+  port                 = 8000
+  protocol             = "HTTP"
+  vpc_id               = aws_vpc.main.id
+  deregistration_delay = 20
+
+  health_check {
+    enabled             = true
+    path                = "/health"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+
+  tags = {
+    Name        = "${local.name_prefix}-backend-tg"
+    Environment = local.env
+  }
+}
+
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.application_load_balancer.arn
   port              = 80
@@ -53,6 +76,38 @@ resource "aws_lb_listener" "http" {
 }
 
 # Portainer UI: ALB → Master:9000 (HTTP, TLS는 추후 ACM + 443 리스너로 확장 가능)
+resource "aws_lb_listener_rule" "backend_api" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 10
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.backend.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/*"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "backend_health" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 20
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.backend.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/health"]
+    }
+  }
+}
+
 resource "aws_lb_target_group" "portainer" {
   name                 = "${local.name_prefix}-portainer-tg"
   port                 = 9000

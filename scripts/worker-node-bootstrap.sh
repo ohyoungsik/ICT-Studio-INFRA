@@ -1,7 +1,7 @@
 #!/bin/bash
 # Docker Swarm worker bootstrap.
 # Runs from ASG launch template user_data:
-# install Docker -> start ALB test nginx -> fetch join info from SSM -> join Swarm.
+# install Docker -> run React container -> configure Nginx proxy -> fetch join info from SSM -> join Swarm.
 
 set -euo pipefail
 
@@ -11,10 +11,17 @@ NAME_PREFIX="${name_prefix}"
 AWS_REGION="${aws_region}"
 SSM_MANAGER_IP="/$${NAME_PREFIX}/swarm/manager-ip"
 SSM_WORKER_TOKEN="/$${NAME_PREFIX}/swarm/worker-token"
+SSM_REDIS_HOST="/$${NAME_PREFIX}/redis/host"
+SSM_REDIS_PORT="/$${NAME_PREFIX}/redis/port"
+SSM_REDIS_PASSWORD="/$${NAME_PREFIX}/redis/password"
 MAX_RETRIES=60
 RETRY_INTERVAL=10
 JOIN_MAX_RETRIES=12
 MANAGER_CONNECT_TIMEOUT=3
+REACT_IMAGE="ohyoungsik/ict-studio-fe:latest"
+REACT_CONTAINER_NAME="ict-studio-fe"
+BACKEND_IMAGE="ohyoungsik/ict-studio-be:latest"
+BACKEND_CONTAINER_NAME="ict-studio-be"
 
 log() {
   echo "[$(date -Is)] $*"
@@ -93,6 +100,48 @@ fetch_swarm_join_info() {
   return 1
 }
 
+fetch_redis_config() {
+  local attempt host port password
+
+  for attempt in $(seq 1 "$MAX_RETRIES"); do
+    log "Fetching Redis config from SSM (attempt $attempt/$MAX_RETRIES)"
+
+    host="$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "$SSM_REDIS_HOST" \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+
+    port="$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "$SSM_REDIS_PORT" \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+
+    password="$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "$SSM_REDIS_PASSWORD" \
+      --with-decryption \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+
+    if [[ -n "$host" && -n "$port" && -n "$password" && "$host" != "None" && "$port" != "None" && "$password" != "None" ]]; then
+      REDIS_HOST="$host"
+      REDIS_PORT="$port"
+      REDIS_PASSWORD="$password"
+      return 0
+    fi
+
+    sleep "$RETRY_INTERVAL"
+  done
+
+  return 1
+}
+
+redis_port_open() {
+  timeout "$MANAGER_CONNECT_TIMEOUT" bash -c 'cat < /dev/null > /dev/tcp/"$1"/"$2"' _ "$REDIS_HOST" "$REDIS_PORT" >/dev/null 2>&1
+}
+
 cleanup_swarm_state() {
   local swarm_state
 
@@ -167,80 +216,98 @@ join_swarm() {
   exit 1
 }
 
-setup_alb_test_service() {
-  local token instance_id private_ip az
+setup_react_app() {
+  log "Installing host Nginx"
+  apt-get update -y
+  apt-get install -y nginx
+  systemctl enable nginx
 
-  token="$(get_imds_token)"
-  instance_id="$(curl -sf -H "X-aws-ec2-metadata-token: $token" \
-    http://169.254.169.254/latest/meta-data/instance-id)"
-  private_ip="$(curl -sf -H "X-aws-ec2-metadata-token: $token" \
-    http://169.254.169.254/latest/meta-data/local-ipv4)"
-  az="$(curl -sf -H "X-aws-ec2-metadata-token: $token" \
-    http://169.254.169.254/latest/meta-data/placement/availability-zone)"
+  log "Starting React container"
+  docker rm -f nginx-test || true
+  docker pull "$REACT_IMAGE"
+  docker rm -f "$REACT_CONTAINER_NAME" || true
+  docker run -d \
+    --name "$REACT_CONTAINER_NAME" \
+    --restart always \
+    -p 8080:80 \
+    "$REACT_IMAGE"
 
-  mkdir -p /opt/nginx-test
+  cat > /etc/nginx/sites-available/default <<'EOF'
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
 
-  cat > /opt/nginx-test/index.html <<EOF
-<!doctype html>
-<html lang="ko">
-  <head>
-    <meta charset="utf-8">
-    <title>ICT Studio ALB Test</title>
-    <style>
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        font-family: Arial, "Noto Sans KR", sans-serif;
-        background: #f4f7fb;
-        color: #1f2937;
-      }
-      main {
-        width: min(720px, calc(100% - 40px));
-        padding: 32px;
-        border: 1px solid #d8dee8;
-        border-radius: 8px;
-        background: #ffffff;
-        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
-      }
-      h1 {
-        margin: 0 0 20px;
-        font-size: 32px;
-      }
-      p {
-        margin: 10px 0;
-        font-size: 18px;
-        line-height: 1.6;
-      }
-      strong {
-        color: #0f766e;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>ICT Studio ALB Test</h1>
-      <p>Swarm Worker - Private <strong>$private_ip</strong></p>
-      <p>Instance ID: <strong>$instance_id</strong></p>
-      <p>Availability Zone: <strong>$az</strong></p>
-      <p>ALB routing test success</p>
-    </main>
-  </body>
-</html>
+    location = /health {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
 EOF
 
-  echo "ok" > /opt/nginx-test/health
+  nginx -t
+  systemctl restart nginx
+  log "React app is running on container port 80 via host port 8080, proxied by Nginx on port 80"
+}
 
-  docker rm -f nginx-test || true
+setup_backend_app() {
+  local -a redis_env=()
+
+  if fetch_redis_config; then
+    if redis_port_open; then
+      log "Redis reachable at $REDIS_HOST:$REDIS_PORT"
+      redis_env=(
+        -e "REDIS_HOST=$REDIS_HOST"
+        -e "REDIS_PORT=$REDIS_PORT"
+        -e "REDIS_PASSWORD=$REDIS_PASSWORD"
+      )
+    else
+      log "WARNING: Redis config found but $REDIS_HOST:$REDIS_PORT is not reachable yet"
+    fi
+  else
+    log "WARNING: Redis config not available from SSM; starting backend without Redis env"
+  fi
+
+  log "Starting Backend container"
+  docker pull "$BACKEND_IMAGE"
+  docker rm -f "$BACKEND_CONTAINER_NAME" || true
   docker run -d \
-    --name nginx-test \
+    --name "$BACKEND_CONTAINER_NAME" \
     --restart always \
-    -p 80:80 \
-    -v /opt/nginx-test:/usr/share/nginx/html:ro \
-    nginx:alpine
+    -p 8000:8000 \
+    -e PYTHONUNBUFFERED=1 \
+    "$${redis_env[@]}" \
+    "$BACKEND_IMAGE"
 
-  log "ALB test nginx container started on port 80"
+  for attempt in $(seq 1 "$MAX_RETRIES"); do
+    if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
+      log "Backend health check passed"
+      return
+    fi
+
+    log "Waiting for Backend health check (attempt $attempt/$MAX_RETRIES)"
+    sleep "$RETRY_INTERVAL"
+  done
+
+  log "WARNING: Backend health check failed; continuing bootstrap so the instance can finish initialization"
+  docker logs "$BACKEND_CONTAINER_NAME" || true
 }
 
 setup_monitoring_agent() {
@@ -363,7 +430,7 @@ EOF
   docker run -d \
     --name cadvisor \
     --restart always \
-    -p 8080:8080 \
+    -p 8081:8080 \
     -v /:/rootfs:ro \
     -v /var/run:/var/run:ro \
     -v /sys:/sys:ro \
@@ -388,8 +455,9 @@ EOF
 
 log "Starting worker node bootstrap"
 install_docker
-setup_alb_test_service
 install_aws_cli
+setup_backend_app
+setup_react_app
 join_swarm
 setup_monitoring_agent
 log "Worker node bootstrap finished"

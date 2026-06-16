@@ -6,12 +6,12 @@ on:
       - main
     paths:
       - "terraform_files/**"
-      - "scripts/init-backend-ci.sh"
+      - "scripts/**"
       - ".github/workflows/terraform.yml"
   pull_request:
     paths:
       - "terraform_files/**"
-      - "scripts/init-backend-ci.sh"
+      - "scripts/**"
       - ".github/workflows/terraform.yml"
 
 jobs:
@@ -52,3 +52,12 @@ jobs:
       - name: Terraform apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: terraform -chdir=terraform_files apply -auto-approve tfplan
+
+      - name: Start ASG instance refresh
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          ASG_NAME=$(terraform -chdir=terraform_files output -raw asg_name)
+          aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name "$ASG_NAME" \
+            --strategy Rolling \
+            --preferences '{"MinHealthyPercentage":50,"InstanceWarmup":300}'

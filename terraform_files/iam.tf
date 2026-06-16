@@ -38,10 +38,9 @@ resource "aws_iam_role_policy_attachment" "ecr_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-# Swarm join 정보를 SSM Parameter Store에 저장/조회
-# - master: PutParameter로 manager IP, worker join token 저장
-# - worker: GetParameter로 위 값을 읽어 docker swarm join 실행
-# Resource 경로를 ${local.name_prefix}/swarm/* 로 제한해 최소 권한만 부여
+# Swarm join / Redis 접속 정보를 SSM Parameter Store에 저장/조회
+# - master: PutParameter로 manager IP, worker join token, Redis endpoint 저장
+# - worker: GetParameter로 위 값을 읽어 swarm join 및 Redis 연결
 resource "aws_iam_role_policy" "swarm_ssm" {
   name = "${local.name_prefix}-swarm-ssm"
   role = aws_iam_role.ec2_instance_role.id
@@ -55,7 +54,10 @@ resource "aws_iam_role_policy" "swarm_ssm" {
         "ssm:GetParameters",
         "ssm:PutParameter"
       ]
-      Resource = "arn:aws:ssm:*:*:parameter/${local.name_prefix}/swarm/*"
+      Resource = [
+        "arn:aws:ssm:*:*:parameter/${local.name_prefix}/swarm/*",
+        "arn:aws:ssm:*:*:parameter/${local.name_prefix}/redis/*"
+      ]
     }]
   })
 }

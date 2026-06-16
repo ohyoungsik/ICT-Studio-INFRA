@@ -13,7 +13,8 @@ resource "aws_autoscaling_group" "app_asg" {
   vpc_zone_identifier = aws_subnet.private_app[*].id
 
   target_group_arns = [
-    aws_lb_target_group.app.arn
+    aws_lb_target_group.app.arn,
+    aws_lb_target_group.backend.arn
   ]
 
   launch_template {
@@ -32,8 +33,8 @@ resource "aws_autoscaling_group" "app_asg" {
 
   # ELB Health Check 사용: ALB의 /api/health 응답 성공 여부로 인스턴스 상태 판단
   health_check_type = "ELB"
-  # Grace Period: Docker 설치와 /health 서비스 시작 시간 확보
-  health_check_grace_period = 300
+  # Grace Period: Docker 설치, 백엔드 빌드, Swarm join 시간 확보
+  health_check_grace_period = 420
 
   tag {
     key                 = "Name"

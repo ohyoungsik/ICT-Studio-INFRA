@@ -183,6 +183,19 @@ resource "aws_security_group_rule" "master_ingress_portainer_from_alb" {
   description              = "Portainer HTTP from ALB"
 }
 
+# 역할: Redis (대기열·캐시)
+# 용도: ASG worker의 FastAPI가 master Redis에 접속
+# 흐름: Worker(app SG) → Manager:6379
+resource "aws_security_group_rule" "master_ingress_redis_from_workers" {
+  type                     = "ingress"
+  from_port                = 6379
+  to_port                  = 6379
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.app.id
+  security_group_id        = aws_security_group.master_node.id
+  description              = "Redis from app workers"
+}
+
 # 역할: Swarm 클러스터 관리 API (Control Plane)
 # 용도: worker의 `swarm join`, heartbeat, task 스케줄링 명령 수신
 # 흐름: Worker(app SG) → Manager:2377
@@ -460,8 +473,8 @@ resource "aws_security_group_rule" "db_ingress_node_exporter_from_bastion" {
 # bastion prometheus > app cadvisor
 resource "aws_security_group_rule" "app_ingress_cadvisor_from_bastion" {
   type                     = "ingress"
-  from_port                = 8080
-  to_port                  = 8080
+  from_port                = 8081
+  to_port                  = 8081
   protocol                 = "tcp"
   source_security_group_id = aws_security_group.bastion.id
   security_group_id        = aws_security_group.app.id
