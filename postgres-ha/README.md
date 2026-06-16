@@ -189,10 +189,14 @@ password=app_password
 
 ## 데이터 백업
 
-PostgreSQL 데이터는 `pg_dump`로 SQL dump 파일을 생성해 로컬 `backup/` 디렉터리에 저장한다.
+PostgreSQL 데이터는 Active Primary 컨테이너 내부의 `pg_dump`로 SQL dump 파일을 생성해 로컬 `backup/` 디렉터리에 저장한다.
 
 ```text
-PostgreSQL
+VM
+↓
+docker exec
+↓
+Active Primary Container
 ↓
 pg_dump
 ↓
@@ -205,11 +209,11 @@ Local Backup Directory
 ./scripts/backup.sh
 ```
 
-기본 접속 대상은 HAProxy가 노출하는 Primary 라우팅 엔드포인트이다.
+스크립트는 Swarm PostgreSQL 서비스 컨테이너를 순회하며 `pg_is_in_recovery()` 결과가 `false`인 Active Primary를 자동 탐지한다.
 
 | 항목 | 기본값 |
 | --- | --- |
-| Host | `advancedproject` |
+| Stack Name | `postgres-ha` |
 | Port | `5432` |
 | Database | `ticketing` |
 | User | `postgres` |
@@ -227,10 +231,10 @@ backup/ticketing_YYYYMMDD_HHMMSS.sql
 backup/ticketing_20260615_120000.sql
 ```
 
-필요하면 환경 변수로 접속 정보를 바꿀 수 있다.
+필요하면 환경 변수로 stack 이름, DB 이름, 계정, SSH 사용자를 바꿀 수 있다.
 
 ```bash
-PGHOST=localhost PGPORT=5432 ./scripts/backup.sh
+STACK_NAME=postgres-ha PGDATABASE=ticketing SSH_USER=ubuntu ./scripts/backup.sh
 ```
 
 ## 백업 파일 확인
@@ -256,16 +260,16 @@ ls -al backup/
 `.sql` 파일은 `psql`로 복구한다.  
 향후 `pg_dump -Fc` 같은 custom dump 형식을 사용할 경우 `restore.sh`는 `pg_restore`로 복구한다.
 
-복구 역시 기본적으로 HAProxy를 통해 현재 Primary에 접속한다.  
-필요하면 백업과 동일하게 환경 변수로 접속 정보를 바꿀 수 있다.
+복구 역시 `pg_is_in_recovery()` 결과가 `false`인 Active Primary 컨테이너 내부에서 실행된다.  
+필요하면 백업과 동일하게 환경 변수로 stack 이름, DB 이름, 계정, SSH 사용자를 바꿀 수 있다.
 
 ```bash
-PGHOST=localhost PGPORT=5432 ./scripts/restore.sh backup/ticketing_20260615_120000.sql
+STACK_NAME=postgres-ha PGDATABASE=ticketing SSH_USER=ubuntu ./scripts/restore.sh backup/ticketing_20260615_120000.sql
 ```
 
 ## PostgreSQL 클라이언트 도구
 
-`backup.sh`와 `restore.sh`는 아래 도구를 사용한다.
+`backup.sh`와 `restore.sh`는 VM Host에 PostgreSQL client 설치를 요구하지 않는다. 아래 도구는 Active Primary PostgreSQL 컨테이너 내부에서 실행된다.
 
 ```text
 pg_dump
@@ -276,14 +280,18 @@ pg_restore
 현재 PostgreSQL 컨테이너는 `bitnamilegacy/postgresql-repmgr:16` 이미지를 사용한다.  
 이 이미지는 PostgreSQL 서버와 클라이언트 도구를 포함하므로 컨테이너 내부에서 dump와 restore를 수행할 수 있다.
 
-로컬 서버에서 스크립트를 실행하려면 로컬에도 PostgreSQL 클라이언트 도구가 설치되어 있어야 한다.
+로컬 VM에는 Docker CLI와, Active Primary가 원격 Swarm 노드에 있을 때 사용할 SSH 접속 권한만 필요하다.
 
 ## 향후 Terraform 확장 계획
 
-현재 백업 구조는 로컬 저장소 기반이다.
+현재 백업 구조는 Active Primary 컨테이너에서 dump를 실행하고 로컬 저장소에 파일을 남기는 구조이다.
 
 ```text
-PostgreSQL
+VM
+↓
+docker exec
+↓
+Active Primary Container
 ↓
 pg_dump
 ↓
@@ -293,7 +301,11 @@ Local Backup Directory
 향후 AWS 인프라로 확장하면 동일한 dump 파일 생성 흐름 뒤에 S3 업로드 단계를 추가한다.
 
 ```text
-PostgreSQL
+VM
+↓
+docker exec
+↓
+Active Primary Container
 ↓
 pg_dump
 ↓

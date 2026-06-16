@@ -112,7 +112,7 @@ services:
       <<: *postgres-common-env
       # repmgr node id는 클러스터 안에서 고유해야 한다.
       REPMGR_NODE_ID: "1"
-      REPMGR_NODE_NAME: primary
+      REPMGR_NODE_NAME: primary-0
       REPMGR_NODE_NETWORK_NAME: primary
       # 초기 Primary이며 장애 후 재합류 시에는 repmgr 상태에 따라 standby가 될 수 있다.
       REPMGR_NODE_PRIORITY: "100"
@@ -141,7 +141,7 @@ services:
     environment:
       <<: *postgres-common-env
       REPMGR_NODE_ID: "2"
-      REPMGR_NODE_NAME: replica1
+      REPMGR_NODE_NAME: replica-1
       REPMGR_NODE_NETWORK_NAME: replica1
       # Replica1을 가장 우선 승격 후보로 둔다.
       # Primary 장애 시 repmgr가 후보를 평가할 때 replica2보다 높은 우선순위를 갖는다.
@@ -170,7 +170,7 @@ services:
     environment:
       <<: *postgres-common-env
       REPMGR_NODE_ID: "3"
-      REPMGR_NODE_NAME: replica2
+      REPMGR_NODE_NAME: replica-2
       REPMGR_NODE_NETWORK_NAME: replica2
       # Replica2는 advancedproject에 위치하며, Replica1 다음 승격 후보이다.
       REPMGR_NODE_PRIORITY: "80"
