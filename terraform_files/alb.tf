@@ -11,6 +11,31 @@ resource "aws_lb" "application_load_balancer" {
   }
 }
 
+# Kept temporarily to avoid deleting an in-use legacy target group during the
+# backend-only cutover. Traffic is routed to aws_lb_target_group.backend.
+resource "aws_lb_target_group" "app" {
+  name                 = "${local.name_prefix}-app-tg"
+  port                 = 80
+  protocol             = "HTTP"
+  vpc_id               = aws_vpc.main.id
+  deregistration_delay = 20
+
+  health_check {
+    enabled             = true
+    path                = "/health"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+
+  tags = {
+    Name        = "${local.name_prefix}-app-tg"
+    Environment = local.env
+  }
+}
+
 resource "aws_lb_target_group" "backend" {
   name                 = "${local.name_prefix}-backend-tg"
   port                 = 8000
