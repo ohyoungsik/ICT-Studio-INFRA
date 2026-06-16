@@ -197,6 +197,20 @@ scrape_configs: # 타겟 수집 설정
       - targets:
           - "prometheus:9090"
 
+  - job_name: "redis"
+    ec2_sd_configs:
+      - region: ap-northeast-2
+        port: 9121
+    relabel_configs:
+      - source_labels: [__meta_ec2_tag_Role]
+        regex: master
+        action: keep
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: instance
+      - source_labels: [__meta_ec2_instance_state]
+        regex: running
+        action: keep
+
   - job_name: "app-server"
     ec2_sd_configs:
       - region: ap-northeast-2
@@ -302,6 +316,21 @@ groups:
         annotations:
           summary: "수집 대상 장애 발생"
           description: "{{ $labels.job }} / {{ $labels.instance }} 대상이 30초 이상 응답하지 않아 down으로 간주"
+EOF
+
+cat > /opt/monitoring/prometheus/rules/redis-alerts.yml <<'EOF'
+groups:
+  - name: redis-alerts
+    rules:
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: redis
+        annotations:
+          summary: "Redis exporter is down"
+          description: "{{ $labels.instance }} Redis exporter target is not responding."
 EOF
 
 cat > /opt/monitoring/prometheus/rules/container-alerts.yml <<'EOF'

@@ -491,3 +491,13 @@ resource "aws_security_group_rule" "app_ingress_cadvisor_from_bastion" {
   security_group_id        = aws_security_group.app.id
   description              = "Prometheus to app cAdvisor"
 }
+
+resource "aws_security_group_rule" "master_ingress_redis_exporter_from_bastion" {
+  type                     = "ingress"
+  from_port                = 9121
+  to_port                  = 9121
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.bastion.id
+  security_group_id        = aws_security_group.master_node.id
+  description              = "Prometheus to Redis exporter"
+}

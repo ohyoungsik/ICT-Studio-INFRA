@@ -1,7 +1,7 @@
 #!/bin/bash
 # Docker Swarm worker bootstrap.
 # Runs from ASG launch template user_data:
-# install Docker -> run React container -> configure Nginx proxy -> fetch join info from SSM -> join Swarm.
+# install Docker -> run Backend container -> fetch join info from SSM -> join Swarm.
 
 set -euo pipefail
 
@@ -18,8 +18,6 @@ MAX_RETRIES=60
 RETRY_INTERVAL=10
 JOIN_MAX_RETRIES=12
 MANAGER_CONNECT_TIMEOUT=3
-REACT_IMAGE="ohyoungsik/ict-studio-fe:latest"
-REACT_CONTAINER_NAME="ict-studio-fe"
 BACKEND_IMAGE="ohyoungsik/ict-studio-be:latest"
 BACKEND_CONTAINER_NAME="ict-studio-be"
 
@@ -216,57 +214,6 @@ join_swarm() {
   exit 1
 }
 
-setup_react_app() {
-  log "Installing host Nginx"
-  apt-get update -y
-  apt-get install -y nginx
-  systemctl enable nginx
-
-  log "Starting React container"
-  docker rm -f nginx-test || true
-  docker pull "$REACT_IMAGE"
-  docker rm -f "$REACT_CONTAINER_NAME" || true
-  docker run -d \
-    --name "$REACT_CONTAINER_NAME" \
-    --restart always \
-    -p 8080:80 \
-    "$REACT_IMAGE"
-
-  cat > /etc/nginx/sites-available/default <<'EOF'
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-
-    location = /health {
-        access_log off;
-        add_header Content-Type text/plain;
-        return 200 "ok\n";
-    }
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000/api/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-EOF
-
-  nginx -t
-  systemctl restart nginx
-  log "React app is running on container port 80 via host port 8080, proxied by Nginx on port 80"
-}
-
 setup_backend_app() {
   local -a redis_env=()
 
@@ -457,7 +404,6 @@ log "Starting worker node bootstrap"
 install_docker
 install_aws_cli
 setup_backend_app
-setup_react_app
 join_swarm
 setup_monitoring_agent
 log "Worker node bootstrap finished"

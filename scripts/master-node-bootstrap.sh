@@ -15,6 +15,7 @@ SSM_REDIS_HOST="/$${NAME_PREFIX}/redis/host"
 SSM_REDIS_PORT="/$${NAME_PREFIX}/redis/port"
 SSM_REDIS_PASSWORD="/$${NAME_PREFIX}/redis/password"
 REDIS_CONTAINER_NAME="redis"
+REDIS_EXPORTER_CONTAINER_NAME="redis-exporter"
 REDIS_PASSWORD_FILE="/opt/redis/password"
 
 log() {
@@ -179,9 +180,32 @@ setup_redis() {
   log "Redis endpoint published to SSM ($private_ip:6379)"
 }
 
+setup_redis_exporter() {
+  local redis_password
+
+  redis_password="$(aws ssm get-parameter \
+    --region "$AWS_REGION" \
+    --name "$SSM_REDIS_PASSWORD" \
+    --with-decryption \
+    --query 'Parameter.Value' \
+    --output text)"
+
+  log "Starting Redis exporter on :9121"
+  docker pull oliver006/redis_exporter:v1.76.0
+  docker rm -f "$REDIS_EXPORTER_CONTAINER_NAME" || true
+  docker run -d \
+    --name "$REDIS_EXPORTER_CONTAINER_NAME" \
+    --restart always \
+    -p 9121:9121 \
+    -e REDIS_ADDR="redis://127.0.0.1:6379" \
+    -e REDIS_PASSWORD="$redis_password" \
+    oliver006/redis_exporter:v1.76.0
+}
+
 log "Starting master node bootstrap"
 install_docker
 install_aws_cli
 init_swarm
 setup_redis
+setup_redis_exporter
 log "Master node bootstrap finished"

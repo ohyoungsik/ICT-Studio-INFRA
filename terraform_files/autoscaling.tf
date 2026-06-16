@@ -13,7 +13,6 @@ resource "aws_autoscaling_group" "app_asg" {
   vpc_zone_identifier = aws_subnet.private_app[*].id
 
   target_group_arns = [
-    aws_lb_target_group.app.arn,
     aws_lb_target_group.backend.arn
   ]
 

@@ -30,6 +30,8 @@ resource "aws_instance" "master_node" {
   user_data_replace_on_change = true
 
   tags = {
-    Name = "${local.name_prefix}-master-node"
+    Name        = "${local.name_prefix}-master-node"
+    Role        = "master"
+    Environment = local.env
   }
 }
