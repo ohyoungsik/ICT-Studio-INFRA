@@ -50,8 +50,10 @@ postgres-ha/
 ├── backup/
 ├── Dockerfile
 ├── README.md
+├── deploy.sh
 ├── haproxy.cfg
 ├── init.sql
+├── reset-data.sh
 ├── scripts/
 │   ├── backup.sh
 │   ├── prepare-data-dirs.sh
@@ -124,6 +126,99 @@ docker push ${DOCKERHUB_ID}/postgres-ha-repmgr:16
 ```bash
 export DOCKERHUB_ID=wodurl
 docker stack deploy --with-registry-auth -c stack.yml postgres-ha
+```
+
+## 초기화 + 재배포
+
+DB bind mount 데이터를 초기화하고 stack을 다시 배포하려면 Swarm manager 노드에서 아래 명령을 실행한다.
+
+```bash
+sudo ./deploy.sh
+```
+
+`deploy.sh`는 내부에서 `reset-data.sh`를 먼저 실행한 뒤 `docker stack deploy -c stack.yml postgres-ha`와 `docker service ls`를 실행한다.
+
+실행 순서는 다음과 같다.
+
+```text
+./reset-data.sh
+docker stack deploy -c stack.yml postgres-ha
+docker service ls
+```
+
+`reset-data.sh`는 다음 작업을 수행한다.
+
+```text
+docker stack rm postgres-ha
+서비스 종료 대기
+/data/postgres/primary 초기화
+/data/postgres/replica1 초기화
+/data/postgres/replica2 초기화
+디렉터리 재생성
+chown -R 1001:1001 /data/postgres
+```
+
+예상 로그 예시는 다음과 같다.
+
+```text
+[2026-06-16 10:00:00] Starting PostgreSQL HA deployment.
+[2026-06-16 10:00:00] Running data reset script.
+[2026-06-16 10:00:00] Starting PostgreSQL HA data reset.
+[2026-06-16 10:00:00] Removing Docker stack: postgres-ha
+Removing service postgres-ha_haproxy
+Removing service postgres-ha_primary
+Removing service postgres-ha_replica1
+Removing service postgres-ha_replica2
+Removing network postgres-ha_postgres_net
+[2026-06-16 10:00:01] Waiting for stack services to stop: postgres-ha
+[2026-06-16 10:00:04] All stack services are stopped.
+[2026-06-16 10:00:04] Resetting PostgreSQL bind mount directories.
+[2026-06-16 10:00:04] Resetting remote data directory: projectmain:/data/postgres/primary
+[2026-06-16 10:00:05] Resetting remote data directory: projectrep1:/data/postgres/replica1
+[2026-06-16 10:00:06] Resetting local data directory: /data/postgres/replica2
+[2026-06-16 10:00:06] PostgreSQL HA data reset completed.
+[2026-06-16 10:00:06] Deploying Docker stack: postgres-ha
+Creating network postgres-ha_postgres_net
+Creating service postgres-ha_primary
+Creating service postgres-ha_replica1
+Creating service postgres-ha_replica2
+Creating service postgres-ha_haproxy
+[2026-06-16 10:00:10] Current Docker services:
+ID             NAME                    MODE         REPLICAS   IMAGE
+xxxxxxxxxxxx   postgres-ha_primary      replicated   1/1        wodurl/postgres-ha-repmgr:16
+xxxxxxxxxxxx   postgres-ha_replica1     replicated   1/1        wodurl/postgres-ha-repmgr:16
+xxxxxxxxxxxx   postgres-ha_replica2     replicated   1/1        wodurl/postgres-ha-repmgr:16
+xxxxxxxxxxxx   postgres-ha_haproxy      replicated   1/1        haproxy:2.9
+[2026-06-16 10:00:10] PostgreSQL HA deployment command completed.
+```
+
+Ansible이나 Terraform 이후 단계와 연결하기 쉽도록 주요 값은 환경 변수로 변경할 수 있다.
+
+| 환경 변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `STACK_NAME` | `postgres-ha` | Docker Stack 이름 |
+| `STACK_FILE` | `stack.yml` | 배포에 사용할 stack 파일 |
+| `DATA_ROOT` | `/data/postgres` | PostgreSQL bind mount 상위 경로 |
+| `POSTGRES_UID` | `1001` | PostgreSQL 컨테이너 UID |
+| `POSTGRES_GID` | `1001` | PostgreSQL 컨테이너 GID |
+| `SUDO` | `sudo` | 원격 및 로컬 권한 상승 명령 |
+| `SSH_USER` | `SUDO_USER` 또는 현재 사용자 | 원격 노드 SSH 사용자 |
+| `SSH_OPTS` | 빈 값 | SSH key 등 추가 옵션 |
+| `SERVICE_WAIT_TIMEOUT` | `120` | 서비스 종료 대기 최대 초 |
+| `SERVICE_WAIT_INTERVAL` | `3` | 서비스 종료 확인 주기 초 |
+
+예시는 다음과 같다.
+
+```bash
+SSH_USER=ubuntu SSH_OPTS="-i ~/.ssh/project-key.pem" sudo -E ./deploy.sh
+```
+
+## 전체 클러스터 삭제
+
+전체 Docker Stack을 삭제하려면 Swarm manager 노드에서 아래 명령을 실행한다.
+
+```bash
+docker stack rm postgres-ha
 ```
 
 ## 상태 확인
