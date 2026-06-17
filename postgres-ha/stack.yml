@@ -1,0 +1,253 @@
+version: "3.8"
+
+# ---------------------------------------------------------------------------
+# Docker Swarm Stack: PostgreSQL HA with repmgr + HAProxy
+# ---------------------------------------------------------------------------
+# 배포 명령:
+#   export DOCKERHUB_ID=wodurl
+#   docker stack deploy --with-registry-auth -c stack.yml postgres-ha
+#
+# 설계 요약:
+# - primary  : projectmain 노드에 고정 배치되는 초기 Primary
+# - replica1 : projectrep1 노드에 고정 배치되는 1순위 승격 후보
+# - replica2 : advancedproject 노드에 고정 배치되는 2순위 Replica
+# - haproxy  : advancedproject 노드에 고정 배치되는 PostgreSQL 진입점
+# - PostgreSQL 장애 감지와 승격은 직접 만든 shell loop가 아니라 repmgr가 담당한다.
+# - 애플리케이션은 DB 노드에 직접 접속하지 않고 haproxy:5432로만 접속한다.
+#
+# 운영 참고:
+# - docker stack deploy는 Dockerfile을 직접 빌드하지 않는다.
+# - 배포 전 Dockerfile 기반 이미지를 Docker Hub에 push해야 한다.
+# - DOCKERHUB_ID 환경 변수로 Docker Hub namespace를 주입한다.
+# ---------------------------------------------------------------------------
+
+x-postgres-common: &postgres-common
+  # repmgr가 포함된 PostgreSQL 16 커스텀 이미지이다.
+  # OS 패키지와 init.sql 같은 공통 파일은 Dockerfile에서 이미지에 포함한다.
+  image: ${DOCKERHUB_ID}/postgres-ha-repmgr:16
+  networks:
+    - postgres_net
+  environment: &postgres-common-env
+    # PostgreSQL 기본 계정이다.
+    # 학습용 값이며 운영에서는 Docker Secret 또는 외부 Secret Manager로 교체한다.
+    POSTGRESQL_POSTGRES_PASSWORD: postgres_password
+
+    # 애플리케이션이 사용할 기본 DB와 계정이다.
+    # init.sql에서도 같은 계정 권한을 보강하므로 마이그레이션 도구가 바로 사용할 수 있다.
+    POSTGRESQL_DATABASE: ticketing
+    POSTGRESQL_USERNAME: appuser
+    POSTGRESQL_PASSWORD: app_password
+
+    # repmgr 전용 계정이다.
+    # repmgr는 이 계정으로 클러스터 메타데이터 관리, standby clone, failover 판단을 수행한다.
+    REPMGR_USERNAME: repmgr
+    REPMGR_PASSWORD: repmgr_password
+    REPMGR_DATABASE: repmgr
+
+    # Swarm overlay network 안에서 각 DB 서비스 이름으로 서로를 찾는다.
+    # 모든 노드를 명시해야 repmgr가 Primary 장애 시 후보 노드를 비교하고 재연결할 수 있다.
+    REPMGR_PARTNER_NODES: primary,replica1,replica2
+    REPMGR_PRIMARY_HOST: primary
+    REPMGR_PRIMARY_PORT: "5432"
+    REPMGR_PORT_NUMBER: "5432"
+
+    # 자동 failover를 켠다.
+    # 이전 구현의 직접 승격 shell loop를 대체하며, 장애 감지와 승격은 repmgr daemon이 수행한다.
+    REPMGR_FAILOVER: automatic
+    REPMGR_CONNECT_TIMEOUT: "5"
+    REPMGR_RECONNECT_ATTEMPTS: "12"
+    REPMGR_RECONNECT_INTERVAL: "5"
+    REPMGR_MASTER_RESPONSE_TIMEOUT: "20"
+    REPMGR_MONITOR_INTERVAL_SECS: "2"
+    REPMGR_DEGRADED_MONITORING_TIMEOUT: "5"
+    REPMGR_CHILD_NODES_CHECK_INTERVAL: "5"
+    REPMGR_CHILD_NODES_CONNECTED_MIN_COUNT: "1"
+    REPMGR_CHILD_NODES_DISCONNECT_TIMEOUT: "30"
+    REPMGR_PRIMARY_VISIBILITY_CONSENSUS: "true"
+
+    # 장애 후 이전 Primary가 돌아왔을 때 pg_rewind 기반 재합류 가능성을 열어 둔다.
+    # 실제 운영에서는 fencing, 백업, WAL archive 정책과 함께 검증해야 한다.
+    REPMGR_USE_PGREWIND: "yes"
+    REPMGR_FENCE_OLD_PRIMARY: "yes"
+
+    # HAProxy가 PostgreSQL wire protocol로 SELECT NOT pg_is_in_recovery()를 실행해 Primary만 통과시킨다.
+    # HAProxy tcp-check는 동적 MD5/SCRAM 인증 응답을 만들 수 없으므로 내부 overlay network health check에 한해 trust를 사용한다.
+    # 운영에서는 별도 role-check endpoint, mTLS, 방화벽, Secret 기반 구성을 권장한다.
+    POSTGRESQL_PGHBA_AUTH_METHOD: trust
+    POSTGRESQL_ALLOW_REMOTE_CONNECTIONS: "yes"
+
+    # PostgreSQL replication과 HA 구성을 위한 기본 파라미터이다.
+    # WAL sender와 slot 여유를 두어 Replica 추가와 일시 지연 상황에 대응한다.
+    POSTGRESQL_WAL_LEVEL: replica
+    POSTGRESQL_EXTRA_FLAGS: >-
+      -c max_wal_senders=10
+      -c max_replication_slots=10
+      -c wal_keep_size=1024MB
+      -c hot_standby=on
+      -c listen_addresses='*'
+
+    # initdb는 최초 volume 초기화 시에만 실행된다.
+    POSTGRESQL_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+  healthcheck:
+    # 컨테이너 자체의 PostgreSQL 접속 가능 여부를 확인한다.
+    # Primary 여부 판별은 HAProxy health check에서 별도로 수행한다.
+    test: ["CMD-SHELL", "pg_isready -U postgres -d postgres -h 127.0.0.1 -p 5432"]
+    interval: 10s
+    timeout: 5s
+    retries: 6
+    start_period: 60s
+  deploy:
+    replicas: 1
+    restart_policy:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 10
+      window: 120s
+
+services:
+  primary:
+    <<: *postgres-common
+    hostname: primary
+    environment:
+      <<: *postgres-common-env
+      # repmgr node id는 클러스터 안에서 고유해야 한다.
+      REPMGR_NODE_ID: "1"
+      REPMGR_NODE_NAME: primary-0
+      REPMGR_NODE_NETWORK_NAME: primary
+      # 초기 Primary이며 장애 후 재합류 시에는 repmgr 상태에 따라 standby가 될 수 있다.
+      REPMGR_NODE_PRIORITY: "100"
+    volumes:
+      # Primary 전용 bind mount이다.
+      # projectmain 노드의 로컬 디렉터리를 PostgreSQL 데이터 디렉터리로 사용한다.
+      # 이 경로는 다른 DB 노드와 공유하면 안 된다.
+      - type: bind
+        source: /data/postgres/primary
+        target: /bitnami/postgresql
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 10
+        window: 120s
+      placement:
+        constraints:
+          # Primary DB는 반드시 projectmain 노드에서 실행한다.
+          - node.hostname == projectmain
+
+  replica1:
+    <<: *postgres-common
+    hostname: replica1
+    environment:
+      <<: *postgres-common-env
+      REPMGR_NODE_ID: "2"
+      REPMGR_NODE_NAME: replica-1
+      REPMGR_NODE_NETWORK_NAME: replica1
+      # Replica1을 가장 우선 승격 후보로 둔다.
+      # Primary 장애 시 repmgr가 후보를 평가할 때 replica2보다 높은 우선순위를 갖는다.
+      REPMGR_NODE_PRIORITY: "90"
+    volumes:
+      # Replica1 전용 bind mount이다.
+      # projectrep1 노드의 로컬 디렉터리를 PostgreSQL 데이터 디렉터리로 사용한다.
+      - type: bind
+        source: /data/postgres/replica1
+        target: /bitnami/postgresql
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 10
+        window: 120s
+      placement:
+        constraints:
+          # Replica1 DB는 반드시 projectrep1 노드에서 실행한다.
+          - node.hostname == projectrep1
+
+  replica2:
+    <<: *postgres-common
+    hostname: replica2
+    environment:
+      <<: *postgres-common-env
+      REPMGR_NODE_ID: "3"
+      REPMGR_NODE_NAME: replica-2
+      REPMGR_NODE_NETWORK_NAME: replica2
+      # Replica2는 advancedproject에 위치하며, Replica1 다음 승격 후보이다.
+      REPMGR_NODE_PRIORITY: "80"
+    volumes:
+      # Replica2 전용 bind mount이다.
+      # advancedproject 노드의 로컬 디렉터리를 PostgreSQL 데이터 디렉터리로 사용한다.
+      - type: bind
+        source: /data/postgres/replica2
+        target: /bitnami/postgresql
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 10
+        window: 120s
+      placement:
+        constraints:
+          # Replica2 DB는 반드시 advancedproject 노드에서 실행한다.
+          - node.hostname == advancedproject
+
+  haproxy:
+    # HAProxy는 PostgreSQL 접속 단일 진입점이다.
+    # DB 역할 판별은 haproxy.cfg의 PostgreSQL protocol tcp-check가 수행한다.
+    image: haproxy:2.9
+    hostname: haproxy
+    networks:
+      - postgres_net
+    configs:
+      - source: haproxy_cfg
+        target: /usr/local/etc/haproxy/haproxy.cfg
+        mode: 0444
+    ports:
+      # 애플리케이션 또는 외부 테스트용 PostgreSQL 진입점이다.
+      # mode: host를 사용해 advancedproject 노드의 포트로 명확히 노출한다.
+      - target: 5432
+        published: 5432
+        protocol: tcp
+        mode: host
+      # HAProxy stats socket이다.
+      # README의 socat show stat 예시에서 사용한다.
+      - target: 8404
+        published: 8404
+        protocol: tcp
+        mode: host
+      # 브라우저로 확인하는 HAProxy 통계 페이지이다.
+      - target: 8405
+        published: 8405
+        protocol: tcp
+        mode: host
+    healthcheck:
+      # HAProxy 설정 파일 문법을 주기적으로 검증한다.
+      test: ["CMD-SHELL", "haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 10
+        window: 120s
+      placement:
+        constraints:
+          # HAProxy는 Swarm Manager인 advancedproject 노드에서 실행한다.
+          - node.hostname == advancedproject
+
+networks:
+  postgres_net:
+    # Overlay network는 Swarm 노드 간 컨테이너 통신을 제공한다.
+    # DB와 HAProxy가 서로 다른 노드에 있어도 서비스 이름으로 통신할 수 있다.
+    driver: overlay
+    attachable: true
+
+configs:
+  haproxy_cfg:
+    # HAProxy routing과 Primary 판별 health check 설정이다.
+    file: ./haproxy.cfg
