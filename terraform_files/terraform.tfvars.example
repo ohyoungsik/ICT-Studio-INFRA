@@ -19,4 +19,5 @@ public_key = "ssh-rsa AAAAB3NzaC1yc2E... your-public-key-here"
 # region           = "ap-northeast-2"
 # desired_capacity = 1
 # min_size         = 1
-# max_size         = 4
+# max_size         = 8
+# queue_length_per_instance_target = 2000

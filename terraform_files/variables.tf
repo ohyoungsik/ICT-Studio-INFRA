@@ -78,7 +78,7 @@ variable "min_size" {
 variable "max_size" {
   description = "ASG maximum size."
   type        = number
-  default     = 4
+  default     = 8
 }
 
 variable "queue_metric_namespace" {
@@ -96,7 +96,7 @@ variable "queue_metric_concert_id" {
 variable "queue_length_per_instance_target" {
   description = "Target Redis queue length per healthy app instance for ASG target tracking."
   type        = number
-  default     = 3000
+  default     = 2000
 }
 
 variable "enable_queue_consumer" {
