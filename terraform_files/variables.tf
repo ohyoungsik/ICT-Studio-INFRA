@@ -116,3 +116,18 @@ variable "queue_consumer_interval_seconds" {
   type        = number
   default     = 30
 }
+
+variable "telegram_bot_token" {
+  type      = string
+  sensitive = true
+}
+
+variable "telegram_chat_id" {
+  type      = string
+  sensitive = true
+}
+
+variable "discord_webhook_url" {
+  type      = string
+  sensitive = true
+}
