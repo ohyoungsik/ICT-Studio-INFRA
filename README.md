@@ -161,9 +161,7 @@ aws autoscaling describe-scaling-activities `
 
 백엔드 k6 스크립트는 별도 백엔드 저장소에 있습니다.
 
-```text
-D:\ict-team\project-files\ict-be\k6\ticketing-load-test.js
-```
+[ohyoungsik/ICT-Studio-BE](https://github.com/ohyoungsik/ICT-Studio-BE)
 
 실행 예시:
 
