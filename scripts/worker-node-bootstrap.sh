@@ -217,20 +217,25 @@ join_swarm() {
 setup_backend_app() {
   local -a redis_env=()
 
-  if fetch_redis_config; then
-    if redis_port_open; then
-      log "Redis reachable at $REDIS_HOST:$REDIS_PORT"
-      redis_env=(
-        -e "REDIS_HOST=$REDIS_HOST"
-        -e "REDIS_PORT=$REDIS_PORT"
-        -e "REDIS_PASSWORD=$REDIS_PASSWORD"
-      )
-    else
-      log "WARNING: Redis config found but $REDIS_HOST:$REDIS_PORT is not reachable yet"
-    fi
-  else
-    log "WARNING: Redis config not available from SSM; starting backend without Redis env"
+  if ! fetch_redis_config; then
+    log "ERROR: Redis config is not available from SSM; refusing to start backend without Redis env"
+    exit 1
   fi
+
+  if ! redis_port_open; then
+    log "ERROR: Redis config found but $REDIS_HOST:$REDIS_PORT is not reachable; refusing to start backend"
+    exit 1
+  fi
+
+  log "Redis reachable at $REDIS_HOST:$REDIS_PORT"
+  redis_env=(
+    -e "REDIS_HOST=$REDIS_HOST"
+    -e "REDIS_PORT=$REDIS_PORT"
+    -e "REDIS_DB=0"
+    -e "REDIS_PASSWORD=$REDIS_PASSWORD"
+    -e "REDIS_CONNECT_TIMEOUT=2"
+    -e "REDIS_SOCKET_TIMEOUT=2"
+  )
 
   log "Starting Backend container"
   docker pull "$BACKEND_IMAGE"
@@ -246,15 +251,28 @@ setup_backend_app() {
   for attempt in $(seq 1 "$MAX_RETRIES"); do
     if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
       log "Backend health check passed"
-      return
+      break
     fi
 
     log "Waiting for Backend health check (attempt $attempt/$MAX_RETRIES)"
     sleep "$RETRY_INTERVAL"
   done
 
-  log "WARNING: Backend health check failed; continuing bootstrap so the instance can finish initialization"
+  for attempt in $(seq 1 "$MAX_RETRIES"); do
+    if curl -fsS http://127.0.0.1:8000/api/health/redis >/dev/null 2>&1; then
+      log "Backend Redis health check passed"
+      return
+    fi
+
+    log "Waiting for Backend Redis health check (attempt $attempt/$MAX_RETRIES)"
+    sleep "$RETRY_INTERVAL"
+  done
+
+  log "ERROR: Backend Redis health check failed"
+  docker inspect "$BACKEND_CONTAINER_NAME" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+    | grep -E '^(REDIS_HOST|REDIS_PORT|REDIS_DB|REDIS_CONNECT_TIMEOUT|REDIS_SOCKET_TIMEOUT)=' || true
   docker logs "$BACKEND_CONTAINER_NAME" || true
+  exit 1
 }
 
 setup_monitoring_agent() {
