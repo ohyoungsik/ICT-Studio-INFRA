@@ -98,3 +98,21 @@ variable "queue_length_per_instance_target" {
   type        = number
   default     = 3000
 }
+
+variable "enable_queue_consumer" {
+  description = "Whether to install a test queue consumer timer on the master node for scale-in validation."
+  type        = bool
+  default     = false
+}
+
+variable "queue_consumer_batch_size" {
+  description = "Number of queue users consumed per queue consumer run."
+  type        = number
+  default     = 100
+}
+
+variable "queue_consumer_interval_seconds" {
+  description = "Interval in seconds for the test queue consumer timer."
+  type        = number
+  default     = 30
+}

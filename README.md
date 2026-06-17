@@ -137,6 +137,37 @@ k6 요청 증가
 -> app 인스턴스 scale-out
 ```
 
+Scale-In 검증은 선택형 queue consumer로 진행합니다.
+
+```text
+enable_queue_consumer = false
+```
+
+기본값은 비활성화입니다. Scale-out을 먼저 확인한 뒤, scale-in 검증 시에만 켜는 것을 권장합니다.
+consumer는 master node에서 `/api/queue/worker`를 주기적으로 호출해 Redis queue length를 감소시킵니다.
+
+Scale-Out 검증 순서:
+
+```text
+1. enable_queue_consumer = false 유지
+2. k6로 /api/queue/join 요청 증가
+3. Redis queue length 증가 확인
+4. CloudWatch QueueLengthPerInstanceForAsg metric 증가 확인
+5. ASG desired capacity / in-service instance 증가 확인
+```
+
+Scale-In 검증 순서:
+
+```text
+1. Scale-out 확인 후 enable_queue_consumer = true 적용
+2. master node의 queue consumer가 /api/queue/worker 주기 호출
+3. Redis queue length 감소 확인
+4. CloudWatch QueueLengthPerInstanceForAsg metric 감소 확인
+5. ASG cooldown 이후 desired capacity 감소 확인
+```
+
+자세한 검증 기록과 명령어는 `docs/queue-autoscaling-validation.md`를 참고합니다.
+
 확인 명령:
 
 ```powershell
@@ -168,7 +199,7 @@ aws autoscaling describe-scaling-activities `
 ```powershell
 k6 run --vus 500 --duration 3m `
   -e BASE_URL=http://ALB_DNS `
-  D:\ict-team\project-files\ict-be\k6\ticketing-load-test.js
+  .\k6\ticketing-load-test.js
 ```
 
 대기열 초과 정책에서는 `429`가 정상 응답일 수 있습니다.
