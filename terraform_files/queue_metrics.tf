@@ -13,7 +13,7 @@ resource "aws_ssm_document" "queue_metric_publisher" {
         inputs = {
           runCommand = [
             <<-EOT
-            set -euo pipefail
+            set -eu
 
             mkdir -p /opt/redis
 
