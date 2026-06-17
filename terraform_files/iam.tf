@@ -102,3 +102,33 @@ resource "aws_iam_role_policy" "prometheus_ec2_sd" {
     ]
   })
 }
+
+resource "aws_iam_role_policy" "queue_metrics" {
+  name = "${local.name_prefix}-queue-metrics"
+  role = aws_iam_role.ec2_instance_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutMetricData"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "cloudwatch:namespace" = "ICT/Queue"
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "autoscaling:DescribeAutoScalingGroups"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}

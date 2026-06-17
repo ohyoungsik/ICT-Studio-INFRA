@@ -69,3 +69,21 @@ resource "aws_autoscaling_policy" "cpu_target_tracking" {
     target_value = 70.0
   }
 }
+
+resource "aws_autoscaling_policy" "queue_target_tracking" {
+  name                      = "${local.name_prefix}-queue-target"
+  autoscaling_group_name    = aws_autoscaling_group.app_asg.name
+  policy_type               = "TargetTrackingScaling"
+  estimated_instance_warmup = 120
+
+  target_tracking_configuration {
+    customized_metric_specification {
+      metric_name = "QueueLengthPerInstanceForAsg"
+      namespace   = var.queue_metric_namespace
+      statistic   = "Average"
+      unit        = "Count"
+    }
+
+    target_value = var.queue_length_per_instance_target
+  }
+}

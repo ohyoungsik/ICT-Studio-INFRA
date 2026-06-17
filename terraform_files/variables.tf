@@ -80,3 +80,21 @@ variable "max_size" {
   type        = number
   default     = 4
 }
+
+variable "queue_metric_namespace" {
+  description = "CloudWatch namespace for Redis queue scaling metrics."
+  type        = string
+  default     = "ICT/Queue"
+}
+
+variable "queue_metric_concert_id" {
+  description = "Concert ID dimension used by queue scaling metrics."
+  type        = string
+  default     = "1"
+}
+
+variable "queue_length_per_instance_target" {
+  description = "Target Redis queue length per healthy app instance for ASG target tracking."
+  type        = number
+  default     = 3000
+}
