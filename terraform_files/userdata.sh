@@ -28,68 +28,6 @@ PRIVATE_IP=$(curl -sf -H "X-aws-ec2-metadata-token: $TOKEN" \
 AZ=$(curl -sf -H "X-aws-ec2-metadata-token: $TOKEN" \
   http://169.254.169.254/latest/meta-data/placement/availability-zone)
 
-# mkdir -p /opt/nginx-test
-
-# cat > /opt/nginx-test/index.html <<EOF
-# <!doctype html>
-# <html lang="ko">
-#   <head>
-#     <meta charset="utf-8">
-#     <title>ICT Studio ALB Test</title>
-#     <style>
-#       body {
-#         margin: 0;
-#         min-height: 100vh;
-#         display: grid;
-#         place-items: center;
-#         font-family: Arial, "Noto Sans KR", sans-serif;
-#         background: #f4f7fb;
-#         color: #1f2937;
-#       }
-#       main {
-#         width: min(720px, calc(100% - 40px));
-#         padding: 32px;
-#         border: 1px solid #d8dee8;
-#         border-radius: 8px;
-#         background: #ffffff;
-#         box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
-#       }
-#       h1 {
-#         margin: 0 0 20px;
-#         font-size: 32px;
-#       }
-#       p {
-#         margin: 10px 0;
-#         font-size: 18px;
-#         line-height: 1.6;
-#       }
-#       strong {
-#         color: #0f766e;
-#       }
-#     </style>
-#   </head>
-#   <body>
-#     <main>
-#       <h1>ICT Studio ALB Test</h1>
-#       <p>여기는 Private <strong>$PRIVATE_IP</strong> 서버입니다.</p>
-#       <p>Instance ID: <strong>$INSTANCE_ID</strong></p>
-#       <p>Availability Zone: <strong>$AZ</strong></p>
-#       <p>ALB routing test success</p>
-#     </main>
-#   </body>
-# </html>
-# EOF
-
-# echo "ok" > /opt/nginx-test/health
-
-# docker rm -f nginx-test || true
-# docker run -d \
-#   --name nginx-test \
-#   --restart always \
-#   -p 80:80 \
-#   -v /opt/nginx-test:/usr/share/nginx/html:ro \
-#   nginx:latest
-
 # 아래는 모니터링 세팅
 mkdir -p /opt/monitoring
 
@@ -143,25 +81,33 @@ services:
     restart: unless-stopped
     networks:
       - monitoring
-  # alertmanager-discord: # discord webhook
-  #   image: benjojo/alertmanager-discord # discord 전송용 보조 어댑터로 버전이 필요없음
-  #   container_name: alertmanager-discord
-  #   environment: # 서버설정 - 연동 - 웹후크
-  #     DISCORD_WEBHOOK: "https://discord.com/api/webhooks/1511180854485979297/WmkVLKs4NRQv7c8rApwM5WxNsecD7Kyg2PRxH-NJ4hnbGtxBQ9fckZczDQapjt5WT73G"
-  #   ports:
-  #     - "9094:9094"
-  #   restart: unless-stopped
-  #   networks:
-  #     - monitoring
+  webhook-receiver:
+    build:
+      context: ./webhook-receiver
+    container_name: webhook-receiver
+    environment:
+      LOKI_URL: "http://loki:3100"
+
+      TELEGRAM_BOT_TOKEN: "8619890854:AAHqDl6BFoTH2L2DEd3TXTuHgYjrxJnLhmg"
+      TELEGRAM_CHAT_ID: "8294889695"
+
+      DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/1511180854485979297/WmkVLKs4NRQv7c8rApwM5WxNsecD7Kyg2PRxH-NJ4hnbGtxBQ9fckZczDQapjt5WT73G"
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - monitoring
   loki:
     image: grafana/loki:3.7.2
     container_name: loki
+    user: "0"
     ports:
       - "3100:3100"
     volumes:
       - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
       - loki-data:/loki
     command: -config.file=/etc/loki/loki-config.yml
+    restart: unless-stopped
     networks:
       - monitoring
 
@@ -345,7 +291,7 @@ global:
   resolve_timeout: 5m
 
 route:
-  receiver: "telegram"
+  receiver: "webhook-receiver"
   group_by:
     - alertname
     - instance
@@ -354,24 +300,10 @@ route:
   repeat_interval: 1m
 
 receivers:
-  - name: "telegram"
-    telegram_configs:
-      - bot_token: "8619890854:AAHqDl6BFoTH2L2DEd3TXTuHgYjrxJnLhmg"
-        chat_id: 8294889695
+  - name: "webhook-receiver"
+    webhook_configs:
+      - url: "http://webhook-receiver:8000/alert"
         send_resolved: true
-        parse_mode: "Markdown"
-        message: |
-          *{{ .Status | toUpper }}* Alert
-
-          *Alert:* {{ .CommonLabels.alertname }}
-          *Severity:* {{ .CommonLabels.severity }}
-
-          {{ range .Alerts }}
-          *Instance:* {{ .Labels.instance }}
-          *Job:* {{ .Labels.job }}
-          *Summary:* {{ .Annotations.summary }}
-          *Description:* {{ .Annotations.description }}
-          {{ end }}
 
 EOF
 
@@ -427,6 +359,176 @@ datasources:
     type: loki
     access: proxy
     url: http://loki:3100
+EOF
+
+mkdir -p /opt/monitoring/webhook-receiver
+
+cat > /opt/monitoring/webhook-receiver/requirements.txt <<'EOF'
+fastapi
+uvicorn
+requests
+EOF
+
+cat > /opt/monitoring/webhook-receiver/Dockerfile <<'EOF'
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY main.py .
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+EOF
+
+cat > /opt/monitoring/webhook-receiver/main.py <<'EOF'
+from fastapi import FastAPI, Request
+import os
+import time
+import requests
+
+app = FastAPI()
+
+LOKI_URL = os.getenv("LOKI_URL", "http://loki:3100")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
+
+
+def query_loki(alertname="", job="", instance="", category="", limit=20):
+    end_ns = int(time.time() * 1_000_000_000)
+    start_ns = end_ns - (10 * 60 * 1_000_000_000)
+
+    # TargetDown은 error 로그가 없을 수 있으니까 더 넓게 조회
+    if alertname == "TargetDown":
+        if "app" in job:
+            query = '{role="app"} |~ "(?i)error|fail|failed|timeout|refused|unreachable|exception|critical|panic|down"'
+        elif "db" in job:
+            query = '{role="db"} |~ "(?i)error|fail|failed|timeout|refused|unreachable|exception|critical|panic|down"'
+        else:
+            query = '{role=~"app|db"} |~ "(?i)error|fail|failed|timeout|refused|unreachable|exception|critical|panic|down"'
+    else:
+        query = '{role=~"app|db"} |~ "(?i)error|fail|failed|timeout|refused|unreachable|exception|critical|panic"'
+
+    params = {
+        "query": query,
+        "start": start_ns,
+        "end": end_ns,
+        "limit": limit,
+        "direction": "backward",
+    }
+
+    try:
+        res = requests.get(
+            f"{LOKI_URL}/loki/api/v1/query_range",
+            params=params,
+            timeout=5,
+        )
+        res.raise_for_status()
+        data = res.json()
+
+        lines = []
+
+        for stream in data.get("data", {}).get("result", []):
+            labels = stream.get("stream", {})
+            role = labels.get("role", "unknown")
+            loki_instance = labels.get("instance", labels.get("host", "unknown"))
+            container = labels.get("container_name", labels.get("container", ""))
+
+            for _, line in stream.get("values", []):
+                prefix = f"[{role} / {loki_instance}]"
+                if container:
+                    prefix += f"[{container}]"
+                lines.append(f"{prefix} {line}")
+
+        if not lines:
+            return "최근 10분 동안 관련 로그 없음"
+
+        return "\n".join(lines[:limit])
+
+    except Exception as e:
+        return f"Loki 조회 실패: {e}"
+
+
+def send_telegram(message: str):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+    }
+
+    try:
+        requests.post(url, json=payload, timeout=5)
+    except Exception:
+        pass
+
+
+def send_discord(message: str):
+    if not DISCORD_WEBHOOK_URL:
+        return
+
+    payload = {
+        "content": message
+    }
+
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=5)
+    except Exception:
+        pass
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.post("/alert")
+async def receive_alert(request: Request):
+    body = await request.json()
+
+    status = body.get("status", "unknown")
+    alerts = body.get("alerts", [])
+
+    for alert in alerts:
+        labels = alert.get("labels", {})
+        annotations = alert.get("annotations", {})
+
+        alertname = labels.get("alertname", "unknown")
+        severity = labels.get("severity", "unknown")
+        instance = labels.get("instance", "unknown")
+        job = labels.get("job", "unknown")
+        category = labels.get("category", "unknown")
+
+        summary = annotations.get("summary", "")
+        description = annotations.get("description", "")
+
+        loki_logs = query_loki(limit=10)
+
+        message = f"""
+[{status.upper()}] Alert + Loki Logs
+
+Alert: {alertname}
+Severity: {severity}
+Category: {category}
+Instance: {instance}
+Job: {job}
+
+Summary: {summary}
+Description: {description}
+
+최근 수집된 문제점:
+{loki_logs}
+"""
+
+        send_telegram(message)
+        send_discord(message)
+
+    return {"result": "ok"}
 EOF
 
 cd /opt/monitoring
