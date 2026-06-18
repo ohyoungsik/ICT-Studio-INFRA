@@ -37,22 +37,6 @@ mkdir -p /opt/postgres-ha /data/postgres
 chown -R 1001:1001 /data/postgres
 chmod 700 /data/postgres
 
-# 모니터링 대상에 포함시키기 위해 node-exporter를 자동으로 실행한다.
-docker rm -f node-exporter || true
-docker run -d \
-  --name node-exporter \
-  --restart always \
-  --pid="host" \
-  -p 9100:9100 \
-  -v /proc:/host/proc:ro \
-  -v /sys:/host/sys:ro \
-  -v /:/rootfs:ro \
-  prom/node-exporter:v1.11.1 \
-  --path.procfs=/host/proc \
-  --path.sysfs=/host/sys \
-  --path.rootfs=/rootfs \
-  --collector.filesystem.mount-points-exclude='^/(sys|proc|dev|host|etc)($|/)'
-
 # 모니터링 대상에 포함시키기 위해 cAdvisor를 자동으로 실행한다.
 docker rm -f cadvisor || true
 docker run -d \
