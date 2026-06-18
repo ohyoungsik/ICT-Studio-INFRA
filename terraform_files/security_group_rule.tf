@@ -135,6 +135,62 @@ resource "aws_security_group_rule" "db_egress_all" {
   description       = "DB outbound all traffic"
 }
 
+# --- Postgres HA --- PostgreSQL HA 전용 Docker Swarm 내부 통신 규칙이다.
+# --- Postgres HA --- DB 노드끼리 Docker Swarm manager/worker 제어 통신을 하기 위한 2377/tcp 허용이다.
+resource "aws_security_group_rule" "db_ingress_swarm_management_self" {
+  type                     = "ingress"
+  from_port                = 2377
+  to_port                  = 2377
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.db.id
+  security_group_id        = aws_security_group.db.id
+  description              = "PostgreSQL HA Swarm management between DB nodes"
+}
+
+# --- Postgres HA --- DB 노드 간 Swarm gossip TCP 통신을 위한 7946/tcp 허용이다.
+resource "aws_security_group_rule" "db_ingress_swarm_gossip_tcp_self" {
+  type                     = "ingress"
+  from_port                = 7946
+  to_port                  = 7946
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.db.id
+  security_group_id        = aws_security_group.db.id
+  description              = "PostgreSQL HA Swarm gossip TCP between DB nodes"
+}
+
+# --- Postgres HA --- DB 노드 간 Swarm gossip UDP 통신을 위한 7946/udp 허용이다.
+resource "aws_security_group_rule" "db_ingress_swarm_gossip_udp_self" {
+  type                     = "ingress"
+  from_port                = 7946
+  to_port                  = 7946
+  protocol                 = "udp"
+  source_security_group_id = aws_security_group.db.id
+  security_group_id        = aws_security_group.db.id
+  description              = "PostgreSQL HA Swarm gossip UDP between DB nodes"
+}
+
+# --- Postgres HA --- DB 노드 간 overlay network VXLAN 통신을 위한 4789/udp 허용이다.
+resource "aws_security_group_rule" "db_ingress_swarm_overlay_self" {
+  type                     = "ingress"
+  from_port                = 4789
+  to_port                  = 4789
+  protocol                 = "udp"
+  source_security_group_id = aws_security_group.db.id
+  security_group_id        = aws_security_group.db.id
+  description              = "PostgreSQL HA Swarm overlay network between DB nodes"
+}
+
+# --- Postgres HA --- 운영자가 Bastion을 통해 HAProxy stats 포트에 접근할 수 있게 한다.
+resource "aws_security_group_rule" "db_ingress_haproxy_stats_from_bastion" {
+  type                     = "ingress"
+  from_port                = 8404
+  to_port                  = 8405
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.bastion.id
+  security_group_id        = aws_security_group.db.id
+  description              = "HAProxy stats access from bastion"
+}
+
 # ==============================================
 # Docker Swarm Security Group 규칙
 # ==============================================

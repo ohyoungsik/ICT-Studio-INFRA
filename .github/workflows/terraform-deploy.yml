@@ -31,6 +31,8 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -54,7 +56,34 @@ jobs:
       - name: Start ASG instance refresh
         run: |
           ASG_NAME=$(terraform -chdir=terraform_files output -raw asg_name)
-          aws autoscaling start-instance-refresh \
-            --auto-scaling-group-name "$ASG_NAME" \
-            --strategy Rolling \
-            --preferences '{"MinHealthyPercentage":50,"InstanceWarmup":300}'
+          aws autoscaling start-instance-refresh --auto-scaling-group-name "$ASG_NAME" --strategy Rolling --preferences '{"MinHealthyPercentage":50,"InstanceWarmup":300}'
+
+      - name: Install Ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible
+
+      - name: Download SSH private key for Ansible
+        run: |
+          KEY_NAME=$(terraform -chdir=terraform_files output -raw key_pair_name)
+          SECRET_NAME=$(terraform -chdir=terraform_files output -raw private_key_secret_name)
+
+          aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query SecretString --output text > "terraform_files/${KEY_NAME}.pem"
+
+          chmod 600 "terraform_files/${KEY_NAME}.pem"
+
+      - name: Show Ansible inventory
+        working-directory: ansible_files
+        run: ansible-inventory --list
+
+      - name: Wait for PostgreSQL HA SSH
+        working-directory: ansible_files
+        run: ansible postgres_ha -m wait_for_connection -a "timeout=300 sleep=5"
+
+      - name: Run Ansible deploy
+        working-directory: ansible_files
+        run: ansible-playbook playbooks/deploy.yml
+
+      - name: Run Ansible verify
+        working-directory: ansible_files
+        run: ansible-playbook playbooks/verify.yml

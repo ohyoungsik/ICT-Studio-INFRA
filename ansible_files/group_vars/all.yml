@@ -1,0 +1,11 @@
+---
+ansible_user: ubuntu
+timezone: Asia/Seoul
+postgres_stack_name: postgres-ha
+postgres_ha_src_dir: "{{ playbook_dir }}/../../postgres-ha"
+postgres_ha_remote_dir: /opt/postgres-ha
+postgres_data_root: /data/postgres
+postgres_uid: 1001
+postgres_gid: 1001
+# Must point to the already-built image used by postgres-ha/stack.yml.
+dockerhub_id: wodurl

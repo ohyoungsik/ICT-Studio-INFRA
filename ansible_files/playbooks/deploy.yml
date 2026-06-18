@@ -1,0 +1,25 @@
+---
+# PostgreSQL HA 전체 배포 playbook이다.
+# Terraform apply 이후 별도로 실행해야 하며, EC2 생성 자체는 Terraform이 담당한다.
+- name: Prepare PostgreSQL HA nodes
+  hosts: postgres_ha
+  become: true
+  roles:
+    # 공통 패키지, timezone, cloud-init 대기 등 OS 기본 준비를 수행한다.
+    - common
+    # Docker Engine과 Docker Compose plugin을 설치한다.
+    - docker
+
+- name: Configure Docker Swarm for PostgreSQL HA
+  hosts: postgres_ha
+  become: true
+  roles:
+    # db-main을 Swarm manager로 만들고 PostgreSQL 데이터 노드 3대를 worker로 join한다.
+    - swarm
+
+- name: Deploy PostgreSQL HA stack
+  hosts: postgres_swarm_manager
+  become: true
+  roles:
+    # Swarm manager인 db-main에서 기존 postgres-ha stack을 배포한다.
+    - postgres_ha
