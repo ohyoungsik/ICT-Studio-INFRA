@@ -1,0 +1,44 @@
+---
+# 각 노드가 이미 Swarm에 참여했는지 확인해 재실행 시 중복 init/join을 피한다.
+- name: Read local Swarm state
+  ansible.builtin.command: docker info --format '{{ "{{.Swarm.LocalNodeState}}" }}'
+  register: swarm_state
+  changed_when: false
+  failed_when: false
+
+# db-main을 PostgreSQL HA 전용 Swarm manager로 초기화한다.
+# HAProxy service도 이 manager 노드에 고정 배치한다.
+- name: Initialize Swarm on db-main
+  ansible.builtin.command: docker swarm init --advertise-addr {{ ansible_host }}
+  when:
+    - inventory_hostname in groups['postgres_swarm_manager']
+    - swarm_state.stdout != "active"
+
+# worker 노드가 join할 때 사용할 token을 manager(db-main)에서 조회한다.
+- name: Read worker join token on db-main
+  ansible.builtin.command: docker swarm join-token -q worker
+  register: swarm_worker_token
+  changed_when: false
+  when: inventory_hostname in groups['postgres_swarm_manager']
+
+# postgres-primary, postgres-replica1, postgres-replica2를 PostgreSQL HA Swarm worker로 참여시킨다.
+- name: Join PostgreSQL data nodes to Swarm
+  ansible.builtin.command: >-
+    docker swarm join
+    --token {{ hostvars[groups['postgres_swarm_manager'][0]].swarm_worker_token.stdout }}
+    {{ hostvars[groups['postgres_swarm_manager'][0]].ansible_host }}:2377
+  when:
+    - inventory_hostname in groups['postgres_swarm_workers']
+    - swarm_state.stdout != "active"
+
+# Swarm 구성 직후 manager에서 노드 목록을 확인한다.
+- name: Show Swarm nodes
+  ansible.builtin.command: docker node ls
+  register: swarm_nodes
+  changed_when: false
+  when: inventory_hostname in groups['postgres_swarm_manager']
+
+- name: Print Swarm nodes
+  ansible.builtin.debug:
+    var: swarm_nodes.stdout_lines
+  when: inventory_hostname in groups['postgres_swarm_manager']

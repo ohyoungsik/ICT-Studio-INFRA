@@ -1,6 +1,18 @@
 #!/bin/bash
 set -e
 
+# db_main은 PostgreSQL HA용 Docker Swarm manager 및 HAProxy 배치 노드이다.
+# 기존 단일 PostgreSQL 컨테이너(postgres-main)는 더 이상 실행하지 않는다.
+hostnamectl set-hostname "${hostname}"
+
+cat >/etc/hosts.tmp <<EOF
+127.0.0.1 localhost
+127.0.1.1 ${hostname}
+EOF
+
+grep -vE '^(127\.0\.0\.1|127\.0\.1\.1)\s' /etc/hosts >>/etc/hosts.tmp || true
+mv /etc/hosts.tmp /etc/hosts
+
 # Docker 공식 리포지토리 등록 및 설치
 apt-get update -y
 apt-get install -y ca-certificates curl gnupg
@@ -20,21 +32,12 @@ apt-get install -y docker-ce docker-ce-cli containerd.io
 systemctl enable docker
 systemctl start docker
 
-# PostgreSQL 데이터 디렉토리 생성
-mkdir -p /opt/postgres/data
+# postgres-ha stack 파일과 Docker runtime이 사용할 기본 디렉터리를 준비한다.
+mkdir -p /opt/postgres-ha /data/postgres
+chown -R 1001:1001 /data/postgres
+chmod 700 /data/postgres
 
-# PostgreSQL 15 컨테이너 실행
-docker run -d \
-  --name postgres-main \
-  --restart unless-stopped \
-  -e POSTGRES_DB=${db_name} \
-  -e POSTGRES_USER=${db_user} \
-  -e POSTGRES_PASSWORD=${db_password} \
-  -v /opt/postgres/data:/var/lib/postgresql/data \
-  -p 5432:5432 \
-  postgres:15
-
-# 모니터링 대상에 포함시키기 위해 ec2생성시 node-exporter가 자동으로 켜지는 설정 추가
+# 모니터링 대상에 포함시키기 위해 node-exporter를 자동으로 실행한다.
 docker rm -f node-exporter || true
 docker run -d \
   --name node-exporter \
@@ -50,6 +53,7 @@ docker run -d \
   --path.rootfs=/rootfs \
   --collector.filesystem.mount-points-exclude='^/(sys|proc|dev|host|etc)($|/)'
 
+# 모니터링 대상에 포함시키기 위해 cAdvisor를 자동으로 실행한다.
 docker rm -f cadvisor || true
 docker run -d \
   --name cadvisor \

@@ -1,0 +1,54 @@
+---
+# 기존 user-data가 docker.gpg signed-by로 Docker repo를 등록했을 수 있어 충돌 원인을 먼저 제거한다.
+- name: Remove legacy Docker apt source created by user-data
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/docker.list
+    state: absent
+
+# Docker 공식 apt repository key를 저장할 디렉터리를 준비한다.
+- name: Ensure Docker apt key directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+# Docker Engine을 Docker 공식 repo에서 설치하기 위한 GPG key이다.
+# 모든 노드에서 docker.asc 하나로 통일해 Signed-By 충돌을 방지한다.
+- name: Install Docker official apt key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+# Ubuntu release codename에 맞는 Docker stable repository를 추가한다.
+- name: Add Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+    filename: docker
+
+# Swarm stack 배포에 필요한 Docker Engine과 Compose plugin을 설치한다.
+- name: Install Docker Engine and Compose plugin
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+# 재부팅 후에도 Docker가 자동 시작되도록 설정한다.
+- name: Enable Docker service
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+# 운영자가 ubuntu 계정으로 Docker 명령을 실행할 수 있게 한다.
+- name: Add ubuntu user to docker group
+  ansible.builtin.user:
+    name: ubuntu
+    groups: docker
+    append: true

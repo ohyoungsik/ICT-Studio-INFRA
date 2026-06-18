@@ -131,3 +131,17 @@ variable "discord_webhook_url" {
   type      = string
   sensitive = true
 }
+
+# --- Postgres HA --- PostgreSQL HA EC2 instance type을 조정하는 변수이다.
+variable "postgres_ha_instance_type" {
+  description = "EC2 instance type for fixed PostgreSQL HA nodes."
+  type        = string
+  default     = "t3.small"
+}
+
+# --- Postgres HA --- PostgreSQL HA EC2 root volume 크기를 GiB 단위로 조정하는 변수이다.
+variable "postgres_ha_root_volume_size" {
+  description = "Root EBS volume size in GiB for PostgreSQL HA nodes."
+  type        = number
+  default     = 30
+}

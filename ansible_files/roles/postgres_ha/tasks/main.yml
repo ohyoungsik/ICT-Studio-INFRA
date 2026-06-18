@@ -1,0 +1,115 @@
+---
+# 각 PostgreSQL 데이터 노드에 자기 역할에 맞는 bind mount 디렉터리를 만든다.
+# Bitnami PostgreSQL 컨테이너가 UID/GID 1001로 쓰기 때문에 owner를 맞춘다.
+- name: Ensure PostgreSQL bind mount directory exists on each DB node
+  ansible.builtin.file:
+    path: "{{ postgres_data_root | default('/data/postgres') }}/{{ postgres_ha_data_dirs[item] }}"
+    state: directory
+    owner: "{{ postgres_uid | default(1001) }}"
+    group: "{{ postgres_gid | default(1001) }}"
+    mode: "0700"
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['postgres_db_nodes'] }}"
+  run_once: true
+  vars:
+    postgres_ha_data_dirs:
+      postgres-primary: primary
+      postgres-replica1: replica1
+      postgres-replica2: replica2
+
+# Swarm manager 노드(db-main)에 postgres-ha stack 파일을 둘 작업 디렉터리를 준비한다.
+- name: Ensure remote postgres-ha directory exists
+  ansible.builtin.file:
+    path: "{{ postgres_ha_remote_dir | default('/opt/postgres-ha') }}"
+    state: directory
+    mode: "0755"
+
+# repository 안의 기존 postgres-ha 구현을 그대로 업로드한다.
+- name: Upload existing postgres-ha implementation
+  ansible.builtin.copy:
+    src: "{{ postgres_ha_src_dir | default(playbook_dir + '/../../postgres-ha') }}/"
+    dest: "{{ postgres_ha_remote_dir | default('/opt/postgres-ha') }}/"
+    mode: preserve
+
+# 원본 stack.yml은 보존하고, 원격 배포 사본의 primary placement만 AWS hostname에 맞춘다.
+- name: Adapt primary placement constraint for AWS node hostname
+  ansible.builtin.replace:
+    path: "{{ postgres_ha_remote_dir | default('/opt/postgres-ha') }}/stack.yml"
+    regexp: "node.hostname == projectmain"
+    replace: "node.hostname == postgres-primary"
+
+# 원본 stack.yml은 보존하고, 원격 배포 사본의 replica1 placement만 AWS hostname에 맞춘다.
+- name: Adapt replica1 placement constraint for AWS node hostname
+  ansible.builtin.replace:
+    path: "{{ postgres_ha_remote_dir | default('/opt/postgres-ha') }}/stack.yml"
+    regexp: "node.hostname == projectrep1"
+    replace: "node.hostname == postgres-replica1"
+
+# replica2 service는 postgres-replica2 데이터 노드에 배치한다.
+- name: Adapt replica2 placement constraint for AWS node hostname
+  ansible.builtin.replace:
+    path: "{{ postgres_ha_remote_dir | default('/opt/postgres-ha') }}/stack.yml"
+    regexp: "(?s)(  replica2:.*?node.hostname == )advancedproject"
+    replace: '\1postgres-replica2'
+
+# HAProxy service는 Swarm manager인 db-main에 배치한다.
+- name: Adapt HAProxy placement constraint for AWS manager hostname
+  ansible.builtin.replace:
+    path: "{{ postgres_ha_remote_dir | default('/opt/postgres-ha') }}/stack.yml"
+    regexp: "(?s)(  haproxy:.*?node.hostname == )advancedproject"
+    replace: '\1db-main'
+
+# 기존 postgres-ha stack.yml을 사용해 PostgreSQL HA 서비스를 Swarm에 배포한다.
+- name: Deploy PostgreSQL HA Docker stack
+  ansible.builtin.shell: |
+    set -euo pipefail
+    DOCKERHUB_ID={{ dockerhub_id | default('wodurl') }} docker stack deploy --with-registry-auth -c stack.yml {{ postgres_stack_name | default('postgres-ha') }}
+  args:
+    chdir: "{{ postgres_ha_remote_dir | default('/opt/postgres-ha') }}"
+    executable: /bin/bash
+  register: stack_deploy
+  changed_when: "'Creating service' in stack_deploy.stdout or 'Updating service' in stack_deploy.stdout or 'Creating network' in stack_deploy.stdout"
+
+# 배포 직후 서비스 목록을 출력해 primary/replica/haproxy 서비스 생성을 확인한다.
+- name: Show Docker services
+  ansible.builtin.command: docker service ls
+  register: docker_services
+  changed_when: false
+
+- name: Print Docker services
+  ansible.builtin.debug:
+    var: docker_services.stdout_lines
+
+# 모든 Swarm service replica가 목표 개수에 도달할 때까지 대기한다.
+- name: Wait for PostgreSQL HA services to converge
+  ansible.builtin.shell: |
+    set -euo pipefail
+    docker stack services {{ postgres_stack_name | default('postgres-ha') }} --format '{{ "{{.Replicas}}" }}' | awk -F/ '{ if ($1 != $2) exit 1 }'
+  args:
+    executable: /bin/bash
+  register: service_converged
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: service_converged.rc == 0
+
+# repmgr CLI는 컨테이너 UID 이름 매핑 문제로 실패할 수 있어 repmgr metadata DB를 SQL로 조회한다.
+# replica2 컨테이너는 postgres-replica2 노드에 있으므로 해당 노드로 위임한다.
+- name: Show repmgr cluster metadata
+  ansible.builtin.shell: |
+    set -euo pipefail
+    container_id="$(docker ps --filter name={{ postgres_stack_name | default('postgres-ha') }}_replica2 -q | head -n 1)"
+    test -n "$container_id"
+    docker exec "$container_id" psql -U repmgr -d repmgr -c "select node_id, node_name, type, active, upstream_node_id from repmgr.nodes order by node_id;"
+  args:
+    executable: /bin/bash
+  delegate_to: postgres-replica2
+  register: repmgr_cluster
+  changed_when: false
+  retries: 20
+  delay: 6
+  until: repmgr_cluster.rc == 0
+
+- name: Print repmgr cluster metadata
+  ansible.builtin.debug:
+    var: repmgr_cluster.stdout_lines
