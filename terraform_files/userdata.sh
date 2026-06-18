@@ -191,7 +191,8 @@ scrape_configs: # 타겟 수집 설정
         port: 9100
     relabel_configs:
       - source_labels: [__meta_ec2_tag_Role]
-        regex: db
+        # db-main(Role=db)과 PostgreSQL HA 데이터 노드(Role=postgres-primary/postgres-replica)를 함께 수집한다.
+        regex: db|postgres-primary|postgres-replica
         action: keep
       - source_labels: [__meta_ec2_tag_Name]
         target_label: instance

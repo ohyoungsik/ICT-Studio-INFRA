@@ -6,11 +6,15 @@ on:
       - main
     paths:
       - "terraform_files/**"
+      - "ansible_files/**"
+      - "postgres-ha/**"
       - "scripts/**"
       - ".github/workflows/terraform.yml"
   pull_request:
     paths:
       - "terraform_files/**"
+      - "ansible_files/**"
+      - "postgres-ha/**"
       - "scripts/**"
       - ".github/workflows/terraform.yml"
 
@@ -32,6 +36,8 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -57,7 +63,40 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           ASG_NAME=$(terraform -chdir=terraform_files output -raw asg_name)
-          aws autoscaling start-instance-refresh \
-            --auto-scaling-group-name "$ASG_NAME" \
-            --strategy Rolling \
-            --preferences '{"MinHealthyPercentage":50,"InstanceWarmup":300}'
+          aws autoscaling start-instance-refresh --auto-scaling-group-name "$ASG_NAME" --strategy Rolling --preferences '{"MinHealthyPercentage":50,"InstanceWarmup":300}'
+
+      - name: Install Ansible
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible
+
+      - name: Download SSH private key for Ansible
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          KEY_NAME=$(terraform -chdir=terraform_files output -raw key_pair_name)
+          SECRET_NAME=$(terraform -chdir=terraform_files output -raw private_key_secret_name)
+
+          aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query SecretString --output text > "terraform_files/${KEY_NAME}.pem"
+
+          chmod 600 "terraform_files/${KEY_NAME}.pem"
+
+      - name: Show Ansible inventory
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: ansible_files
+        run: ansible-inventory --list
+
+      - name: Wait for PostgreSQL HA SSH
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: ansible_files
+        run: ansible postgres_ha -m wait_for_connection -a "timeout=300 sleep=5"
+
+      - name: Run Ansible deploy
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: ansible_files
+        run: ansible-playbook playbooks/deploy.yml
+
+      - name: Run Ansible verify
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: ansible_files
+        run: ansible-playbook playbooks/verify.yml
