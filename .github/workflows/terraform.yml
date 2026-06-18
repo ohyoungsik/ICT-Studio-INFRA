@@ -25,6 +25,10 @@ jobs:
     env:
       AWS_REGION: ap-northeast-2
       TF_BACKEND_KEY: prod-ict/terraform.tfstate
+      TF_INPUT: "false"
+      TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TF_VAR_discord_webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
     steps:
       - name: Checkout
