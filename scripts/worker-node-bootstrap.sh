@@ -127,7 +127,13 @@ fetch_redis_config() {
       REDIS_HOST="$host"
       REDIS_PORT="$port"
       REDIS_PASSWORD="$password"
-      return 0
+
+      if redis_port_open; then
+        log "Redis reachable at $REDIS_HOST:$REDIS_PORT"
+        return 0
+      fi
+
+      log "Redis config found but $REDIS_HOST:$REDIS_PORT is not reachable yet"
     fi
 
     sleep "$RETRY_INTERVAL"
@@ -218,16 +224,10 @@ setup_backend_app() {
   local -a redis_env=()
 
   if ! fetch_redis_config; then
-    log "ERROR: Redis config is not available from SSM; refusing to start backend without Redis env"
+    log "ERROR: Redis config is not available or reachable from SSM; refusing to start backend without Redis env"
     exit 1
   fi
 
-  if ! redis_port_open; then
-    log "ERROR: Redis config found but $REDIS_HOST:$REDIS_PORT is not reachable; refusing to start backend"
-    exit 1
-  fi
-
-  log "Redis reachable at $REDIS_HOST:$REDIS_PORT"
   redis_env=(
     -e "REDIS_HOST=$REDIS_HOST"
     -e "REDIS_PORT=$REDIS_PORT"
