@@ -89,12 +89,12 @@ resource "aws_autoscaling_policy" "queue_target_tracking" {
 }
 
 resource "aws_autoscaling_policy" "queue_burst_step_scale_out" {
-  name                    = "${local.name_prefix}-queue-burst-step-out"
-  autoscaling_group_name  = aws_autoscaling_group.app_asg.name
-  policy_type             = "StepScaling"
-  adjustment_type         = "ChangeInCapacity"
-  cooldown                = 60
-  metric_aggregation_type = "Average"
+  name                      = "${local.name_prefix}-queue-burst-step-out"
+  autoscaling_group_name    = aws_autoscaling_group.app_asg.name
+  policy_type               = "StepScaling"
+  adjustment_type           = "ChangeInCapacity"
+  estimated_instance_warmup = 60
+  metric_aggregation_type   = "Average"
 
   step_adjustment {
     metric_interval_lower_bound = 0
