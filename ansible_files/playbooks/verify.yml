@@ -1,0 +1,46 @@
+---
+# PostgreSQL HA 배포 이후 상태 확인 전용 playbook이다.
+- name: Verify PostgreSQL HA stack
+  hosts: postgres_swarm_manager
+  become: true
+  tasks:
+    # Swarm manager인 db-main에서 네 DB subnet 노드가 클러스터에 참여했는지 확인한다.
+    - name: Show Docker Swarm nodes
+      ansible.builtin.command: docker node ls
+      register: docker_nodes
+      changed_when: false
+
+    - name: Print Docker Swarm nodes
+      ansible.builtin.debug:
+        var: docker_nodes.stdout_lines
+
+    # postgres-ha stack 서비스가 생성되었는지 확인한다.
+    - name: Show Docker services
+      ansible.builtin.command: docker service ls
+      register: docker_services
+      changed_when: false
+
+    - name: Print Docker services
+      ansible.builtin.debug:
+        var: docker_services.stdout_lines
+
+    # repmgr CLI는 컨테이너 UID 이름 매핑 문제로 실패할 수 있어 repmgr metadata DB를 SQL로 조회한다.
+    # replica2 컨테이너는 postgres-replica2 노드에 있으므로 해당 노드로 위임한다.
+    - name: Show repmgr cluster metadata
+      ansible.builtin.shell: |
+        set -euo pipefail
+        container_id="$(docker ps --filter name={{ postgres_stack_name | default('postgres-ha') }}_replica2 -q | head -n 1)"
+        test -n "$container_id"
+        docker exec "$container_id" psql -U repmgr -d repmgr -c "select node_id, node_name, type, active, upstream_node_id from repmgr.nodes order by node_id;"
+      args:
+        executable: /bin/bash
+      delegate_to: postgres-replica2
+      register: repmgr_cluster
+      changed_when: false
+      retries: 20
+      delay: 6
+      until: repmgr_cluster.rc == 0
+
+    - name: Print repmgr cluster metadata
+      ansible.builtin.debug:
+        var: repmgr_cluster.stdout_lines

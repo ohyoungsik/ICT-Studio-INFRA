@@ -90,6 +90,47 @@ output "db_main_private_ip" {
   value       = aws_instance.db_main.private_ip
 }
 
+
+# --- Postgres HA --- Ansible inventory와 운영 확인에 사용할 Primary private IP 출력이다.
+output "postgres_primary_private_ip" {
+  description = "PostgreSQL HA primary EC2 private IP address."
+  value       = aws_instance.postgres_primary.private_ip
+}
+
+# --- Postgres HA --- Ansible inventory와 운영 확인에 사용할 Replica1 private IP 출력이다.
+output "postgres_replica1_private_ip" {
+  description = "PostgreSQL HA replica1 EC2 private IP address."
+  value       = aws_instance.postgres_replica1.private_ip
+}
+
+# --- Postgres HA --- Ansible inventory와 운영 확인에 사용할 Replica2 private IP 출력이다.
+output "postgres_replica2_private_ip" {
+  description = "PostgreSQL HA replica2 EC2 private IP address."
+  value       = aws_instance.postgres_replica2.private_ip
+}
+
+# --- Postgres HA --- 세 PostgreSQL HA 노드 IP를 map 형태로 한 번에 확인하기 위한 출력이다.
+output "postgres_ha_private_ips" {
+  description = "PostgreSQL HA node private IP addresses."
+  value = {
+    primary  = aws_instance.postgres_primary.private_ip
+    replica1 = aws_instance.postgres_replica1.private_ip
+    replica2 = aws_instance.postgres_replica2.private_ip
+  }
+}
+
+# --- Postgres HA --- 애플리케이션이 write endpoint로 사용할 HAProxy private endpoint 출력이다.
+output "postgres_ha_haproxy_endpoint" {
+  description = "Private PostgreSQL HAProxy write endpoint hosted on db_main manager node."
+  value       = "${aws_instance.db_main.private_ip}:5432"
+}
+
+# --- Postgres HA --- Terraform apply 이후 Ansible inventory 확인 명령을 안내하는 출력이다.
+output "postgres_ha_ansible_inventory" {
+  description = "Run this inventory from ansible_files after terraform apply."
+  value       = "cd ../ansible_files && ansible-inventory --list"
+}
+
 output "bastion_public_ip" {
   description = "Bastion host public IP address."
   value       = aws_instance.bastion.public_ip
@@ -131,6 +172,10 @@ output "deployment_summary" {
      Portainer    : http://${aws_lb.application_load_balancer.dns_name}:9000
      Bastion IP   : ${aws_instance.bastion.public_ip}
      DB Main IP   : ${aws_instance.db_main.private_ip}
+     PG Primary   : ${aws_instance.postgres_primary.private_ip}
+     PG Replica1  : ${aws_instance.postgres_replica1.private_ip}
+     PG Replica2  : ${aws_instance.postgres_replica2.private_ip}
+     PG HAProxy   : ${aws_instance.db_main.private_ip}:5432
      Master IP    : ${aws_instance.master_node.private_ip} (Swarm / Redis)
      Redis SSM    : /${local.name_prefix}/redis/*
      DB Main IP   : ${aws_instance.db_main.private_ip}

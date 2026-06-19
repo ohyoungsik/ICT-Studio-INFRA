@@ -218,3 +218,75 @@ ASG에서 새 인스턴스가 생겼다고 모두 scale-out은 아닙니다.
 Cause가 ELB health check failure 또는 instance refresh면 교체 작업입니다.
 진짜 scale-out은 desired capacity가 증가해야 합니다.
 ```
+
+## PostgreSQL HA DB Layer 자동화
+
+DB Layer는 `postgres-ha` 구현을 재사용해 PostgreSQL 데이터 노드 3대와 HAProxy/Swarm manager 노드 1대로 배포합니다. PostgreSQL 노드는 Stateful 서비스이므로 ASG나 Launch Template 기반 자동 증설 대상이 아닙니다.
+
+```text
+db_main           - Docker Swarm manager, HAProxy endpoint
+postgres-primary  - Docker Swarm worker, PostgreSQL primary
+postgres-replica1 - Docker Swarm worker, PostgreSQL replica1
+postgres-replica2 - Docker Swarm worker, PostgreSQL replica2
+```
+
+### AWS Credential 준비
+
+```bash
+aws configure
+```
+
+CI에서는 AWS credential을 GitHub Actions secret 또는 OIDC 방식으로 제공합니다.
+
+### SSH Key 준비
+
+Terraform이 EC2 key pair와 로컬 pem 파일을 생성합니다.
+
+```bash
+cd terraform_files
+terraform apply
+ls -l ict-project-key.pem
+```
+
+### Terraform 실행
+
+```bash
+cd terraform_files
+terraform init
+terraform plan
+terraform apply
+```
+
+주요 출력값:
+
+```bash
+terraform output postgres_primary_private_ip
+terraform output postgres_replica1_private_ip
+terraform output postgres_replica2_private_ip
+terraform output postgres_ha_haproxy_endpoint
+```
+
+### Ansible 실행
+
+```bash
+cd ../ansible_files
+ansible-inventory --list
+ansible-playbook playbooks/deploy.yml
+```
+
+검증:
+
+```bash
+ansible-playbook playbooks/verify.yml
+```
+
+전체 흐름은 다음과 같습니다.
+
+```text
+Terraform
+-> EC2 생성
+-> Docker 설치
+-> Swarm 구성
+-> PostgreSQL HA 배포
+```
+

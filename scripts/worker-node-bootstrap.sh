@@ -305,14 +305,22 @@ setup_backend_app() {
     exit 1
   fi
 
-  if ! fetch_db_config; then
-    log "ERROR: DB config is not available from SSM; refusing to start backend without DB env"
-    exit 1
-  fi
+  if fetch_db_config; then
+    db_env=(
+      -e "DB_HOST=$DB_HOST"
+      -e "DB_PORT=$DB_PORT"
+      -e "DB_NAME=$DB_NAME"
+      -e "DB_USER=$DB_USER"
+      -e "DB_PASSWORD=$DB_PASSWORD"
+    )
 
-  if ! db_port_open; then
-    log "ERROR: DB config found but $DB_HOST:$DB_PORT is not reachable; refusing to start backend"
-    exit 1
+    if db_port_open; then
+      log "DB endpoint reachable at $DB_HOST:$DB_PORT"
+    else
+      log "DB config found but $DB_HOST:$DB_PORT is not reachable yet; starting backend with DB env anyway"
+    fi
+  else
+    log "DB config is not available from SSM yet; starting backend without DB env"
   fi
 
   log "Redis reachable at $REDIS_HOST:$REDIS_PORT"
@@ -323,13 +331,6 @@ setup_backend_app() {
     -e "REDIS_PASSWORD=$REDIS_PASSWORD"
     -e "REDIS_CONNECT_TIMEOUT=2"
     -e "REDIS_SOCKET_TIMEOUT=2"
-  )
-  db_env=(
-    -e "DB_HOST=$DB_HOST"
-    -e "DB_PORT=$DB_PORT"
-    -e "DB_NAME=$DB_NAME"
-    -e "DB_USER=$DB_USER"
-    -e "DB_PASSWORD=$DB_PASSWORD"
   )
 
   log "Starting Backend container"
@@ -355,19 +356,18 @@ setup_backend_app() {
   done
 
   for attempt in $(seq 1 "$MAX_RETRIES"); do
-    if curl -fsS http://127.0.0.1:8000/api/health/db >/dev/null 2>&1 \
-      && curl -fsS http://127.0.0.1:8000/api/health/redis >/dev/null 2>&1; then
-      log "Backend DB and Redis health checks passed"
+    if curl -fsS http://127.0.0.1:8000/api/health/redis >/dev/null 2>&1; then
+      log "Backend Redis health check passed"
       return
     fi
 
-    log "Waiting for Backend DB/Redis health check (attempt $attempt/$MAX_RETRIES)"
+    log "Waiting for Backend Redis health check (attempt $attempt/$MAX_RETRIES)"
     sleep "$RETRY_INTERVAL"
   done
 
-  log "ERROR: Backend DB/Redis health check failed"
+  log "ERROR: Backend Redis health check failed"
   docker inspect "$BACKEND_CONTAINER_NAME" --format '{{range .Config.Env}}{{println .}}{{end}}' \
-    | grep -E '^(DB_HOST|DB_PORT|DB_NAME|DB_USER)=' || true
+    | grep -E '^(REDIS_HOST|REDIS_PORT|REDIS_DB|REDIS_CONNECT_TIMEOUT|REDIS_SOCKET_TIMEOUT|DB_HOST|DB_PORT|DB_NAME|DB_USER)=' || true
   docker logs "$BACKEND_CONTAINER_NAME" || true
   exit 1
 }

@@ -87,3 +87,45 @@ resource "aws_autoscaling_policy" "queue_target_tracking" {
     target_value = var.queue_length_per_instance_target
   }
 }
+
+resource "aws_autoscaling_policy" "queue_burst_step_scale_out" {
+  name                      = "${local.name_prefix}-queue-burst-step-out"
+  autoscaling_group_name    = aws_autoscaling_group.app_asg.name
+  policy_type               = "StepScaling"
+  adjustment_type           = "ChangeInCapacity"
+  estimated_instance_warmup = 60
+  metric_aggregation_type   = "Average"
+
+  step_adjustment {
+    metric_interval_lower_bound = 0
+    metric_interval_upper_bound = 3000
+    scaling_adjustment          = 2
+  }
+
+  step_adjustment {
+    metric_interval_lower_bound = 3000
+    scaling_adjustment          = 4
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "queue_burst_scale_out" {
+  alarm_name          = "${local.name_prefix}-queue-burst-scale-out"
+  alarm_description   = "Scale out app ASG quickly when the total Redis queue length spikes."
+  namespace           = var.queue_metric_namespace
+  metric_name         = "QueueLength"
+  statistic           = "Average"
+  period              = 60
+  evaluation_periods  = 1
+  threshold           = 3000
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    Environment = local.env
+    ConcertId   = var.queue_metric_concert_id
+  }
+
+  alarm_actions = [
+    aws_autoscaling_policy.queue_burst_step_scale_out.arn
+  ]
+}
