@@ -12,9 +12,12 @@ resource "aws_instance" "db_main" {
   }
 
   user_data_base64 = base64encode(templatefile("${path.module}/db-main-userdata.sh", {
+    name_prefix = local.name_prefix
+    aws_region  = var.region
     db_name     = var.db_name
     db_user     = var.db_user
     db_password = var.db_password
+    db_init_sql = file("${path.module}/../postgres-ha/init.sql")
   }))
 
   tags = {

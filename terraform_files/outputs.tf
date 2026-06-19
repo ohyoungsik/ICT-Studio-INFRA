@@ -109,6 +109,17 @@ output "redis_ssm_parameters" {
   }
 }
 
+output "db_ssm_parameters" {
+  description = "SSM Parameter Store paths for PostgreSQL connection."
+  value = {
+    host     = aws_ssm_parameter.db_host.name
+    port     = aws_ssm_parameter.db_port.name
+    name     = aws_ssm_parameter.db_name.name
+    user     = aws_ssm_parameter.db_user.name
+    password = aws_ssm_parameter.db_password.name
+  }
+}
+
 output "deployment_summary" {
   description = "Deployment result summary."
   value       = <<-EOT
@@ -122,6 +133,8 @@ output "deployment_summary" {
      DB Main IP   : ${aws_instance.db_main.private_ip}
      Master IP    : ${aws_instance.master_node.private_ip} (Swarm / Redis)
      Redis SSM    : /${local.name_prefix}/redis/*
+     DB Main IP   : ${aws_instance.db_main.private_ip}
+     DB SSM       : /${local.name_prefix}/db/*
      ASG Name     : ${aws_autoscaling_group.app_asg.name}
      Key Pair     : ${aws_key_pair.app_key.key_name}
      Key Secret   : ${aws_secretsmanager_secret.private_key.name}

@@ -56,8 +56,25 @@ resource "aws_iam_role_policy" "swarm_ssm" {
       ]
       Resource = [
         "arn:aws:ssm:*:*:parameter/${local.name_prefix}/swarm/*",
-        "arn:aws:ssm:*:*:parameter/${local.name_prefix}/redis/*"
+        "arn:aws:ssm:*:*:parameter/${local.name_prefix}/redis/*",
+        "arn:aws:ssm:*:*:parameter/${local.name_prefix}/db/*"
       ]
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "backend_image_s3" {
+  name = "${local.name_prefix}-backend-image-s3"
+  role = aws_iam_role.ec2_instance_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject"
+      ]
+      Resource = "arn:aws:s3:::prod-ict-terraform-state-2df0de99/artifacts/ict-studio-be/*"
     }]
   })
 }

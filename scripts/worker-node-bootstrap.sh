@@ -14,11 +14,18 @@ SSM_WORKER_TOKEN="/$${NAME_PREFIX}/swarm/worker-token"
 SSM_REDIS_HOST="/$${NAME_PREFIX}/redis/host"
 SSM_REDIS_PORT="/$${NAME_PREFIX}/redis/port"
 SSM_REDIS_PASSWORD="/$${NAME_PREFIX}/redis/password"
+SSM_DB_HOST="/$${NAME_PREFIX}/db/host"
+SSM_DB_PORT="/$${NAME_PREFIX}/db/port"
+SSM_DB_NAME="/$${NAME_PREFIX}/db/name"
+SSM_DB_USER="/$${NAME_PREFIX}/db/user"
+SSM_DB_PASSWORD="/$${NAME_PREFIX}/db/password"
 MAX_RETRIES=60
 RETRY_INTERVAL=10
 JOIN_MAX_RETRIES=12
 MANAGER_CONNECT_TIMEOUT=3
+DB_CONNECT_TIMEOUT=3
 BACKEND_IMAGE="ohyoungsik/ict-studio-be:latest"
+BACKEND_IMAGE_S3_URI="${backend_image_s3_uri}"
 BACKEND_CONTAINER_NAME="ict-studio-be"
 
 log() {
@@ -146,6 +153,64 @@ redis_port_open() {
   timeout "$MANAGER_CONNECT_TIMEOUT" bash -c 'cat < /dev/null > /dev/tcp/"$1"/"$2"' _ "$REDIS_HOST" "$REDIS_PORT" >/dev/null 2>&1
 }
 
+fetch_db_config() {
+  local attempt host port name user password
+
+  for attempt in $(seq 1 "$MAX_RETRIES"); do
+    log "Fetching DB config from SSM (attempt $attempt/$MAX_RETRIES)"
+
+    host="$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "$SSM_DB_HOST" \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+
+    port="$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "$SSM_DB_PORT" \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+
+    name="$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "$SSM_DB_NAME" \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+
+    user="$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "$SSM_DB_USER" \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+
+    password="$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "$SSM_DB_PASSWORD" \
+      --with-decryption \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+
+    if [[ -n "$host" && -n "$port" && -n "$name" && -n "$user" && -n "$password" \
+      && "$host" != "None" && "$port" != "None" && "$name" != "None" \
+      && "$user" != "None" && "$password" != "None" ]]; then
+      DB_HOST="$host"
+      DB_PORT="$port"
+      DB_NAME="$name"
+      DB_USER="$user"
+      DB_PASSWORD="$password"
+      return 0
+    fi
+
+    sleep "$RETRY_INTERVAL"
+  done
+
+  return 1
+}
+
+db_port_open() {
+  timeout "$DB_CONNECT_TIMEOUT" bash -c 'cat < /dev/null > /dev/tcp/"$1"/"$2"' _ "$DB_HOST" "$DB_PORT" >/dev/null 2>&1
+}
+
 cleanup_swarm_state() {
   local swarm_state
 
@@ -220,14 +285,37 @@ join_swarm() {
   exit 1
 }
 
+load_backend_image() {
+  if [[ -n "$BACKEND_IMAGE_S3_URI" ]]; then
+    log "Loading Backend image from S3 ($BACKEND_IMAGE_S3_URI)"
+    aws s3 cp "$BACKEND_IMAGE_S3_URI" /tmp/backend-image.tar.gz
+    gunzip -c /tmp/backend-image.tar.gz | docker load
+    return
+  fi
+
+  log "Pulling Backend image from Docker Hub"
+  docker pull "$BACKEND_IMAGE"
+}
+
 setup_backend_app() {
-  local -a redis_env=()
+  local -a redis_env=() db_env=()
 
   if ! fetch_redis_config; then
     log "ERROR: Redis config is not available or reachable from SSM; refusing to start backend without Redis env"
     exit 1
   fi
 
+  if ! fetch_db_config; then
+    log "ERROR: DB config is not available from SSM; refusing to start backend without DB env"
+    exit 1
+  fi
+
+  if ! db_port_open; then
+    log "ERROR: DB config found but $DB_HOST:$DB_PORT is not reachable; refusing to start backend"
+    exit 1
+  fi
+
+  log "Redis reachable at $REDIS_HOST:$REDIS_PORT"
   redis_env=(
     -e "REDIS_HOST=$REDIS_HOST"
     -e "REDIS_PORT=$REDIS_PORT"
@@ -236,9 +324,16 @@ setup_backend_app() {
     -e "REDIS_CONNECT_TIMEOUT=2"
     -e "REDIS_SOCKET_TIMEOUT=2"
   )
+  db_env=(
+    -e "DB_HOST=$DB_HOST"
+    -e "DB_PORT=$DB_PORT"
+    -e "DB_NAME=$DB_NAME"
+    -e "DB_USER=$DB_USER"
+    -e "DB_PASSWORD=$DB_PASSWORD"
+  )
 
   log "Starting Backend container"
-  docker pull "$BACKEND_IMAGE"
+  load_backend_image
   docker rm -f "$BACKEND_CONTAINER_NAME" || true
   docker run -d \
     --name "$BACKEND_CONTAINER_NAME" \
@@ -246,6 +341,7 @@ setup_backend_app() {
     -p 8000:8000 \
     -e PYTHONUNBUFFERED=1 \
     "$${redis_env[@]}" \
+    "$${db_env[@]}" \
     "$BACKEND_IMAGE"
 
   for attempt in $(seq 1 "$MAX_RETRIES"); do
@@ -259,18 +355,19 @@ setup_backend_app() {
   done
 
   for attempt in $(seq 1 "$MAX_RETRIES"); do
-    if curl -fsS http://127.0.0.1:8000/api/health/redis >/dev/null 2>&1; then
-      log "Backend Redis health check passed"
+    if curl -fsS http://127.0.0.1:8000/api/health/db >/dev/null 2>&1 \
+      && curl -fsS http://127.0.0.1:8000/api/health/redis >/dev/null 2>&1; then
+      log "Backend DB and Redis health checks passed"
       return
     fi
 
-    log "Waiting for Backend Redis health check (attempt $attempt/$MAX_RETRIES)"
+    log "Waiting for Backend DB/Redis health check (attempt $attempt/$MAX_RETRIES)"
     sleep "$RETRY_INTERVAL"
   done
 
-  log "ERROR: Backend Redis health check failed"
+  log "ERROR: Backend DB/Redis health check failed"
   docker inspect "$BACKEND_CONTAINER_NAME" --format '{{range .Config.Env}}{{println .}}{{end}}' \
-    | grep -E '^(REDIS_HOST|REDIS_PORT|REDIS_DB|REDIS_CONNECT_TIMEOUT|REDIS_SOCKET_TIMEOUT)=' || true
+    | grep -E '^(DB_HOST|DB_PORT|DB_NAME|DB_USER)=' || true
   docker logs "$BACKEND_CONTAINER_NAME" || true
   exit 1
 }

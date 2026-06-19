@@ -47,20 +47,26 @@ variable "key_name" {
 variable "db_name" {
   description = "PostgreSQL database name."
   type        = string
-  default     = "scott_db"
+  default     = "ticketing"
 }
 
 variable "db_user" {
   description = "PostgreSQL user name."
   type        = string
-  default     = "scott"
+  default     = "appuser"
 }
 
 variable "db_password" {
   description = "PostgreSQL password."
   type        = string
-  default     = "tiger"
+  default     = "app_password"
   sensitive   = true
+}
+
+variable "backend_image_s3_uri" {
+  description = "S3 URI of the backend Docker image tarball loaded by worker nodes."
+  type        = string
+  default     = "s3://prod-ict-terraform-state-2df0de99/artifacts/ict-studio-be/latest.tar.gz"
 }
 
 variable "desired_capacity" {

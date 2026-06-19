@@ -66,10 +66,11 @@ resource "aws_launch_template" "app_lt" {
   vpc_security_group_ids = [aws_security_group.app.id]
 
   user_data = base64encode(templatefile("${path.module}/../scripts/worker-node-bootstrap.sh", {
-    name_prefix   = local.name_prefix
-    aws_region    = var.region
-    host_role     = "app"
-    loki_push_url = "http://${aws_instance.bastion.private_ip}:3100/loki/api/v1/push"
+    name_prefix          = local.name_prefix
+    aws_region           = var.region
+    host_role            = "app"
+    loki_push_url        = "http://${aws_instance.bastion.private_ip}:3100/loki/api/v1/push"
+    backend_image_s3_uri = var.backend_image_s3_uri
   }))
 
   tag_specifications {
