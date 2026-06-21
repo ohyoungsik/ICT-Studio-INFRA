@@ -27,7 +27,9 @@
         ]
       }}
   loop: "{{ db_monitor_hosts }}"
-  when: hostvars.get(item, {}).get('ansible_host')
+  when:
+    - hostvars[item].ansible_host is defined
+    - hostvars[item].ansible_host | length > 0
 
 - name: Collect DB cAdvisor targets from inventory
   ansible.builtin.set_fact:
@@ -42,7 +44,9 @@
         ]
       }}
   loop: "{{ db_monitor_hosts }}"
-  when: hostvars.get(item, {}).get('ansible_host')
+  when:
+    - hostvars[item].ansible_host is defined
+    - hostvars[item].ansible_host | length > 0
 
 - name: Ensure DB scrape targets exist
   ansible.builtin.assert:
