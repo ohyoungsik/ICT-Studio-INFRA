@@ -12,8 +12,9 @@ exec > >(tee /var/log/portainer-init.log) 2>&1
 STACK_NAME="${STACK_NAME:-portainer}"
 STACK_DIR="/opt/portainer"
 STACK_FILE="${STACK_DIR}/portainer-agent-stack.yml"
-# manager bootstrap에서 drain 설정된 상태에서도 Portainer가 스케줄되도록 잠시 active로 전환
-RESTORE_MANAGER_DRAIN="${RESTORE_MANAGER_DRAIN:-true}"
+# Portainer itself is constrained to a manager node. Restoring the manager to
+# drain after deployment makes the service unschedulable on a restart.
+RESTORE_MANAGER_DRAIN="${RESTORE_MANAGER_DRAIN:-false}"
 # worker join 대기 (agent global 배포를 위해 최소 1대 권장)
 WAIT_FOR_WORKERS="${WAIT_FOR_WORKERS:-true}"
 MAX_WORKER_WAIT_RETRIES="${MAX_WORKER_WAIT_RETRIES:-30}"
