@@ -110,3 +110,7 @@ Terraform Apply
 -> ansible-playbook playbooks/deploy.yml
 -> ansible-playbook playbooks/verify.yml
 ```
+
+db 모니터링 적용
+cd ~/ICT-Studio-INFRA/ansible_files
+ansible-playbook -i inventory/terraform_inventory.py playbooks/monitoring-only.yml

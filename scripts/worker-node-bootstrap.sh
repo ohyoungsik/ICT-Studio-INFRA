@@ -288,9 +288,12 @@ join_swarm() {
 load_backend_image() {
   if [[ -n "$BACKEND_IMAGE_S3_URI" ]]; then
     log "Loading Backend image from S3 ($BACKEND_IMAGE_S3_URI)"
-    aws s3 cp "$BACKEND_IMAGE_S3_URI" /tmp/backend-image.tar.gz
-    gunzip -c /tmp/backend-image.tar.gz | docker load
-    return
+    if aws s3 cp "$BACKEND_IMAGE_S3_URI" /tmp/backend-image.tar.gz \
+      && gunzip -c /tmp/backend-image.tar.gz | docker load; then
+      return
+    fi
+
+    log "WARNING: Failed to load backend image from S3; falling back to Docker Hub image $BACKEND_IMAGE"
   fi
 
   log "Pulling Backend image from Docker Hub"
@@ -517,8 +520,8 @@ EOF
 
 log "Starting worker node bootstrap"
 install_docker
+setup_monitoring_agent
 install_aws_cli
 setup_backend_app
 join_swarm
-setup_monitoring_agent
 log "Worker node bootstrap finished"

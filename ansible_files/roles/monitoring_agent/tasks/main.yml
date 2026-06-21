@@ -1,0 +1,96 @@
+---
+- name: Remove stale monitoring containers
+  ansible.builtin.command:
+    argv:
+      - docker
+      - rm
+      - -f
+      - "{{ item }}"
+  loop:
+    - node_exporter
+    - node-exporter
+    - cadvisor
+  failed_when: false
+  changed_when: false
+
+- name: Run node_exporter container
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - -d
+      - --name
+      - node_exporter
+      - --restart
+      - always
+      - --pid
+      - host
+      - -p
+      - 9100:9100
+      - -v
+      - /proc:/host/proc:ro
+      - -v
+      - /sys:/host/sys:ro
+      - -v
+      - /:/rootfs:ro
+      - prom/node-exporter:v1.11.1
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)
+  register: node_exporter_run
+  changed_when: node_exporter_run.rc == 0
+
+- name: Run cAdvisor container
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - -d
+      - --name
+      - cadvisor
+      - --restart
+      - always
+      - --privileged
+      - -p
+      - 8080:8080
+      - -v
+      - /:/rootfs:ro
+      - -v
+      - /var/run:/var/run:ro
+      - -v
+      - /sys:/sys:ro
+      - -v
+      - /var/lib/docker:/var/lib/docker:ro
+      - -v
+      - /dev/disk:/dev/disk:ro
+      - gcr.io/cadvisor/cadvisor:v0.55.1
+  register: cadvisor_run
+  changed_when: cadvisor_run.rc == 0
+
+- name: Wait for node_exporter port to open
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 9100
+    timeout: 30
+
+- name: Wait for cAdvisor port to open
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 8080
+    timeout: 30
+
+- name: Check monitoring containers
+  ansible.builtin.command:
+    argv:
+      - docker
+      - ps
+      - -a
+      - --format
+      - '{{ "{{.Names}} {{.Status}} {{.Ports}}" }}'
+  register: monitoring_containers
+  changed_when: false
+
+- name: Print monitoring containers
+  ansible.builtin.debug:
+    var: monitoring_containers.stdout_lines

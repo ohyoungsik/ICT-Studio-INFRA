@@ -28,30 +28,24 @@ PRIVATE_IP=$(curl -sf -H "X-aws-ec2-metadata-token: $TOKEN" \
 AZ=$(curl -sf -H "X-aws-ec2-metadata-token: $TOKEN" \
   http://169.254.169.254/latest/meta-data/placement/availability-zone)
 
-# 아래는 모니터링 세팅
 mkdir -p /opt/monitoring
 
 cat > /opt/monitoring/docker-compose.yml <<'EOF'
 services:
   prometheus:
-    image: prom/prometheus:v3.12.0 # 혹시 모를 이변에 대비한 버전 고정
+    image: prom/prometheus:v3.12.0
     container_name: prometheus
     ports:
       - "9090:9090"
-    volumes: # 로컬파일 > 컨테이너, ro = readonly
+    volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-             # rules 파일 read
       - ./prometheus/rules:/etc/prometheus/rules:ro 
-             # 수집한 데이터 저장공간
       - prometheus-data:/prometheus
-    command: # prometheus 실행옵션
-             # 설정파일
+    command:
       - "--config.file=/etc/prometheus/prometheus.yml"
-             # 메트릭 저장 위치, tsdb = time series database
       - "--storage.tsdb.path=/prometheus"
-             # 이 옵션으로 prometheus 설정을 api로 다시 읽게 할 수 있다
       - "--web.enable-lifecycle"
-    restart: unless-stopped # container가 죽으면 자동으로 재시작
+    restart: unless-stopped
     networks:
       - monitoring
 
@@ -117,7 +111,7 @@ volumes:
   alertmanager-data:
   loki-data:
 
-networks: # Loki << >> alloy
+networks:
   monitoring:
     driver: bridge
 EOF
@@ -137,7 +131,7 @@ alerting:
 rule_files:
   - "/etc/prometheus/rules/*.yml"
 
-scrape_configs: # 타겟 수집 설정
+scrape_configs:
   - job_name: "prometheus"
     static_configs:
       - targets:
@@ -163,13 +157,13 @@ scrape_configs: # 타겟 수집 설정
         port: 9100
     relabel_configs:
       - source_labels: [__meta_ec2_tag_Role] # Role tag에서
-        regex: app # app서버를 찾아서
-        action: keep # 본다
-      - source_labels: [__meta_ec2_tag_Name] # 찾은 node를
-        target_label: instance # instance로 보이게 한다
-      - source_labels: [__meta_ec2_instance_state] # 찾은 node가
-        regex: running # 실행중인 것만
-        action: keep # 본다
+        regex: app
+        action: keep
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: instance
+      - source_labels: [__meta_ec2_instance_state]
+        regex: running
+        action: keep
 
   - job_name: "app-cadvisor"
     ec2_sd_configs:
@@ -178,6 +172,21 @@ scrape_configs: # 타겟 수집 설정
     relabel_configs:
       - source_labels: [__meta_ec2_tag_Role]
         regex: app
+        action: keep
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: instance
+      - source_labels: [__meta_ec2_instance_state]
+        regex: running
+        action: keep
+
+  - job_name: "db-node-exporter"
+    ec2_sd_configs:
+      - region: ap-northeast-2
+        port: 9100
+    relabel_configs:
+      - source_labels: [__meta_ec2_tag_Role]
+        # db-main(Role=db)과 PostgreSQL HA 데이터 노드(Role=postgres-primary/postgres-replica)를 함께 수집한다.
+        regex: db|postgres-primary|postgres-replica
         action: keep
       - source_labels: [__meta_ec2_tag_Name]
         target_label: instance

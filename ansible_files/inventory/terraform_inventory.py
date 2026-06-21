@@ -19,7 +19,18 @@ def terraform_output():
             stderr=subprocess.DEVNULL,
         )
     except Exception:
-        print(json.dumps({"_meta": {"hostvars": {}}, "postgres_ha": {"hosts": []}}))
+        print(json.dumps(
+            {
+                "_meta": {"hostvars": {}},
+                "postgres_primary": {"hosts": []},
+                "postgres_replicas": {"hosts": []},
+                "postgres_db_nodes": {"hosts": []},
+                "postgres_swarm_manager": {"hosts": []},
+                "postgres_swarm_workers": {"hosts": []},
+                "postgres_ha": {"hosts": []},
+                "monitoring_server": {"hosts": []},
+            }
+        ))
         return None
     return json.loads(raw)
 
@@ -47,6 +58,7 @@ def main():
 
     # DB subnet의 모든 PostgreSQL HA 관련 노드는 private IP를 ansible_host로 사용한다.
     hosts = {
+        "bastion": value(outputs, "bastion_public_ip"),
         "db-main": value(outputs, "db_main_private_ip"),
         "postgres-primary": value(outputs, "postgres_primary_private_ip"),
         "postgres-replica1": value(outputs, "postgres_replica1_private_ip"),
@@ -74,7 +86,7 @@ def main():
             "ansible_user": "ubuntu",
             "ansible_ssh_private_key_file": str(key_path),
         }
-        if proxy:
+        if host != "bastion" and proxy:
             hostvars[host]["ansible_ssh_common_args"] = proxy
 
     # db-main은 Swarm manager와 HAProxy 노드이다.
@@ -85,7 +97,10 @@ def main():
         "postgres_db_nodes": {"hosts": [h for h in ["postgres-primary", "postgres-replica1", "postgres-replica2"] if h in hostvars]},
         "postgres_swarm_manager": {"hosts": ["db-main"] if "db-main" in hostvars else []},
         "postgres_swarm_workers": {"hosts": [h for h in ["postgres-primary", "postgres-replica1", "postgres-replica2"] if h in hostvars]},
-        "postgres_ha": {"children": ["postgres_swarm_manager", "postgres_db_nodes"]},
+        "postgres_ha": {
+            "hosts": [h for h in ["db-main", "postgres-primary", "postgres-replica1", "postgres-replica2"] if h in hostvars]
+        },
+        "monitoring_server": {"hosts": ["bastion"] if "bastion" in hostvars else []},
         "_meta": {"hostvars": hostvars},
     }
     print(json.dumps(inventory, indent=2))

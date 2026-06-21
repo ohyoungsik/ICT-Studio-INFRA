@@ -1,0 +1,21 @@
+{
+    "InstanceRefreshes": [
+        {
+            "InstanceRefreshId": "35fd74c4-bff9-4097-aa15-6ed1b08cea9c",
+            "AutoScalingGroupName": "prod-ict-app-asg",
+            "Status": "InProgress",
+            "StatusReason": "Waiting for remaining instances to be available. For example: i-01b2385ed9f761808 has insufficient data to evaluate its health with Elastic Load Balancing.",
+            "StartTime": "2026-06-20T10:21:04+00:00",
+            "PercentageComplete": 100,
+            "InstancesToUpdate": 0,
+            "Preferences": {
+                "MinHealthyPercentage": 50,
+                "InstanceWarmup": 300,
+                "SkipMatching": false,
+                "AutoRollback": false,
+                "AlarmSpecification": {}
+            },
+            "Strategy": "Rolling"
+        }
+    ]
+}

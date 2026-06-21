@@ -1,0 +1,84 @@
+---
+- name: Ensure Prometheus config directory exists
+  ansible.builtin.file:
+    path: /opt/monitoring/prometheus
+    state: directory
+    mode: "0755"
+
+- name: Build DB monitor host list from inventory groups
+  ansible.builtin.set_fact:
+    db_monitor_hosts: "{{ groups.get('postgres_ha', []) | unique | sort }}"
+
+- name: Initialize DB scrape target lists
+  ansible.builtin.set_fact:
+    db_node_exporter_targets: []
+    db_cadvisor_targets: []
+
+- name: Collect DB node_exporter targets from inventory
+  ansible.builtin.set_fact:
+    db_node_exporter_targets: >-
+      {{
+        db_node_exporter_targets
+        + [
+          {
+            'target': hostvars[item].ansible_host ~ ':9100',
+            'instance': item
+          }
+        ]
+      }}
+  loop: "{{ db_monitor_hosts }}"
+  when: hostvars.get(item, {}).get('ansible_host')
+
+- name: Collect DB cAdvisor targets from inventory
+  ansible.builtin.set_fact:
+    db_cadvisor_targets: >-
+      {{
+        db_cadvisor_targets
+        + [
+          {
+            'target': hostvars[item].ansible_host ~ ':8080',
+            'instance': item
+          }
+        ]
+      }}
+  loop: "{{ db_monitor_hosts }}"
+  when: hostvars.get(item, {}).get('ansible_host')
+
+- name: Ensure DB scrape targets exist
+  ansible.builtin.assert:
+    that:
+      - db_node_exporter_targets | length > 0
+      - db_cadvisor_targets | length > 0
+    fail_msg: "postgres_ha inventory does not contain any ansible_host values."
+
+- name: Render Prometheus configuration from inventory
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /opt/monitoring/prometheus/prometheus.yml
+    mode: "0644"
+  register: prometheus_config_rendered
+
+- name: Recreate Prometheus container from compose
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - up
+      - -d
+      - --force-recreate
+      - prometheus
+  args:
+    chdir: /opt/monitoring
+
+- name: Reload Prometheus configuration
+  ansible.builtin.uri:
+    url: http://127.0.0.1:9090/-/reload
+    method: POST
+    status_code: 200
+    return_content: false
+
+- name: Wait for Prometheus to become available
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 9090
+    timeout: 60

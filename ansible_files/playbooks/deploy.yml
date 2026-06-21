@@ -9,6 +9,8 @@
     - common
     # Docker Engine과 Docker Compose plugin을 설치한다.
     - docker
+    # DB 4대에 node_exporter와 cAdvisor를 직접 띄운다.
+    - monitoring_agent
 
 - name: Configure Docker Swarm for PostgreSQL HA
   hosts: postgres_ha
@@ -23,3 +25,10 @@
   roles:
     # Swarm manager인 db-main에서 기존 postgres-ha stack을 배포한다.
     - postgres_ha
+
+- name: Render Prometheus scrape config on monitoring server
+  hosts: monitoring_server
+  become: true
+  roles:
+    # bastion의 Prometheus 설정을 inventory 기반으로 다시 렌더링한다.
+    - prometheus_config
