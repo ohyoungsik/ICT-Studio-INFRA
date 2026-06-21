@@ -214,8 +214,8 @@ resource "aws_security_group_rule" "master_ingress_ssh_from_bastion" {
 
 # 역할: Bastion 경유 Portainer 웹 UI 접속
 # 용도: 운영자가 Bastion에서 SSH 터널(-L)로 manager의 Portainer에 접근
-# 포트: 8000(Edge), 9000(HTTP), 9443(HTTPS)
-# 흐름: Local PC → Bastion(SSH tunnel) → Manager:8000|9000|9443
+# 포트: 8001(Edge), 9000(HTTP), 9443(HTTPS)
+# 흐름: Local PC → Bastion(SSH tunnel) → Manager:8001|9000|9443
 resource "aws_security_group_rule" "master_ingress_portainer_from_bastion" {
   type                     = "ingress"
   from_port                = 8000
@@ -223,7 +223,7 @@ resource "aws_security_group_rule" "master_ingress_portainer_from_bastion" {
   protocol                 = "tcp"
   source_security_group_id = aws_security_group.bastion.id
   security_group_id        = aws_security_group.master_node.id
-  description              = "Portainer UI from bastion (8000, 9000, 9443)"
+  description              = "Portainer UI from bastion (8001, 9000, 9443)"
 }
 
 # 역할: ALB → Portainer 웹 UI (외부 직접 접속)

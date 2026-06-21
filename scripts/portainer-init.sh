@@ -150,7 +150,7 @@ services:
     ports:
       - "9443:9443"
       - "9000:9000"
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - portainer_data:/data
     networks:
@@ -238,7 +238,7 @@ print_summary() {
   log "Access Portainer UI (SSH tunnel via bastion recommended):"
   log "  HTTPS: https://${private_ip}:9443"
   log "  HTTP:  http://${private_ip}:9000"
-  log "Edge agent tunnel port: ${private_ip}:8000"
+  log "Edge agent tunnel port: ${private_ip}:8001"
 }
 
 log "Starting Portainer init on Swarm manager"
