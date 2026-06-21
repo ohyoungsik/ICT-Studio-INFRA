@@ -302,6 +302,7 @@ load_backend_image() {
 
 setup_backend_app() {
   local -a redis_env=() db_env=()
+  local backend_health_ok=false redis_health_ok=false
 
   if ! fetch_redis_config; then
     log "ERROR: Redis config is not available or reachable from SSM; refusing to start backend without Redis env"
@@ -320,7 +321,7 @@ setup_backend_app() {
     if db_port_open; then
       log "DB endpoint reachable at $DB_HOST:$DB_PORT"
     else
-      log "DB config found but $DB_HOST:$DB_PORT is not reachable yet; starting backend with DB env anyway"
+      log "DB config found but $DB_HOST:$DB_PORT is not reachable yet; backend container will retry via Docker restart policy"
     fi
   else
     log "DB config is not available from SSM yet; starting backend without DB env"
@@ -351,6 +352,7 @@ setup_backend_app() {
   for attempt in $(seq 1 "$MAX_RETRIES"); do
     if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
       log "Backend health check passed"
+      backend_health_ok=true
       break
     fi
 
@@ -361,18 +363,22 @@ setup_backend_app() {
   for attempt in $(seq 1 "$MAX_RETRIES"); do
     if curl -fsS http://127.0.0.1:8000/api/health/redis >/dev/null 2>&1; then
       log "Backend Redis health check passed"
-      return
+      redis_health_ok=true
+      break
     fi
 
     log "Waiting for Backend Redis health check (attempt $attempt/$MAX_RETRIES)"
     sleep "$RETRY_INTERVAL"
   done
 
-  log "ERROR: Backend Redis health check failed"
+  if [[ "$backend_health_ok" == "true" && "$redis_health_ok" == "true" ]]; then
+    return
+  fi
+
+  log "WARNING: Backend did not become fully healthy during bootstrap; leaving container under --restart always"
   docker inspect "$BACKEND_CONTAINER_NAME" --format '{{range .Config.Env}}{{println .}}{{end}}' \
     | grep -E '^(REDIS_HOST|REDIS_PORT|REDIS_DB|REDIS_CONNECT_TIMEOUT|REDIS_SOCKET_TIMEOUT|DB_HOST|DB_PORT|DB_NAME|DB_USER)=' || true
   docker logs "$BACKEND_CONTAINER_NAME" || true
-  exit 1
 }
 
 setup_monitoring_agent() {

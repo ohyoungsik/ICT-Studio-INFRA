@@ -53,11 +53,6 @@ jobs:
       - name: Terraform apply
         run: terraform -chdir=terraform_files apply -auto-approve tfplan
 
-      - name: Start ASG instance refresh
-        run: |
-          ASG_NAME=$(terraform -chdir=terraform_files output -raw asg_name)
-          aws autoscaling start-instance-refresh --auto-scaling-group-name "$ASG_NAME" --strategy Rolling --preferences '{"MinHealthyPercentage":50,"InstanceWarmup":300}'
-
       - name: Install Ansible
         run: |
           sudo apt-get update
@@ -76,9 +71,13 @@ jobs:
         working-directory: ansible_files
         run: ansible-inventory --list
 
+      - name: Wait for Bastion SSH
+        working-directory: ansible_files
+        run: ansible monitoring_server -m wait_for_connection -a "timeout=300 sleep=5"
+
       - name: Wait for PostgreSQL HA SSH
         working-directory: ansible_files
-        run: ansible postgres_ha -m wait_for_connection -a "timeout=300 sleep=5"
+        run: ansible postgres_ha -m wait_for_connection -a "timeout=600 sleep=5"
 
       - name: Run Ansible deploy
         working-directory: ansible_files
