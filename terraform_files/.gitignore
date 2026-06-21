@@ -12,6 +12,9 @@ terraform.tfstate.backup
 *.tfplan
 plan.out
 
+# Generated Lambda packages
+lambda/*.zip
+
 # Terraform variable files - sensitive
 *.tfvars
 *.tfvars.json
