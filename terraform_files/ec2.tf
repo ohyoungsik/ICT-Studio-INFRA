@@ -27,7 +27,11 @@ resource "aws_instance" "master_node" {
   subnet_id              = aws_subnet.private_app[0].id
 
   user_data_base64            = data.cloudinit_config.master_node.rendered
-  user_data_replace_on_change = true
+  user_data_replace_on_change = false
+
+  lifecycle {
+    ignore_changes = [user_data_base64]
+  }
 
   tags = {
     Name        = "${local.name_prefix}-master-node"
