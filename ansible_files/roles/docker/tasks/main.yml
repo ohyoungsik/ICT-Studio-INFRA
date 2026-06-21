@@ -52,39 +52,3 @@
     name: ubuntu
     groups: docker
     append: true
-
-# 모니터링 대상에 포함시키기 위해 모든 PostgreSQL HA 노드에서 node-exporter를 실행한다.
-# Docker 설치와 서비스 시작이 끝난 뒤 실행해야 하므로 docker role의 마지막 단계에 둔다.
-- name: Check existing node-exporter container
-  ansible.builtin.command: docker ps -a --format '{{ "{{.Names}}" }}'
-  register: node_exporter_containers
-  changed_when: false
-
-# node-exporter가 아직 없는 노드에서만 컨테이너를 생성해 playbook 재실행 시 이름 충돌을 피한다.
-# db-main-userdata.sh에 있던 설정과 동일하게 호스트 CPU, 메모리, 디스크 메트릭을 9100 포트에 노출한다.
-- name: Run node-exporter container
-  ansible.builtin.command:
-    argv:
-      - docker
-      - run
-      - -d
-      - --name
-      - node-exporter
-      - --restart
-      - always
-      - --pid=host
-      - -p
-      - 9100:9100
-      - -v
-      - /proc:/host/proc:ro
-      - -v
-      - /sys:/host/sys:ro
-      - -v
-      - /:/rootfs:ro
-      - prom/node-exporter:v1.11.1
-      - --path.procfs=/host/proc
-      - --path.sysfs=/host/sys
-      - --path.rootfs=/rootfs
-      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)
-  when: "'node-exporter' not in node_exporter_containers.stdout_lines"
-
