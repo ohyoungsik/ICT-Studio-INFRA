@@ -125,6 +125,17 @@ resource "aws_security_group_rule" "db_ingress_postgres" {
   description              = "App to DB Postgres access"
 }
 
+# App → HAProxy 읽기 전용 엔드포인트(5433). SELECT 트래픽을 replica로 분산한다.
+resource "aws_security_group_rule" "db_ingress_postgres_read" {
+  type                     = "ingress"
+  from_port                = 5433
+  to_port                  = 5433
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.app.id
+  security_group_id        = aws_security_group.db.id
+  description              = "App to DB Postgres read-only (HAProxy replica routing)"
+}
+
 resource "aws_security_group_rule" "db_egress_all" {
   type              = "egress"
   from_port         = 0

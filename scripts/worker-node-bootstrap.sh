@@ -16,6 +16,8 @@ SSM_REDIS_PORT="/$${NAME_PREFIX}/redis/port"
 SSM_REDIS_PASSWORD="/$${NAME_PREFIX}/redis/password"
 SSM_DB_HOST="/$${NAME_PREFIX}/db/host"
 SSM_DB_PORT="/$${NAME_PREFIX}/db/port"
+SSM_DB_READ_HOST="/$${NAME_PREFIX}/db/read_host"
+SSM_DB_READ_PORT="/$${NAME_PREFIX}/db/read_port"
 SSM_DB_NAME="/$${NAME_PREFIX}/db/name"
 SSM_DB_USER="/$${NAME_PREFIX}/db/user"
 SSM_DB_PASSWORD="/$${NAME_PREFIX}/db/password"
@@ -154,7 +156,7 @@ redis_port_open() {
 }
 
 fetch_db_config() {
-  local attempt host port name user password
+  local attempt host port read_host read_port name user password
 
   for attempt in $(seq 1 "$MAX_RETRIES"); do
     log "Fetching DB config from SSM (attempt $attempt/$MAX_RETRIES)"
@@ -168,6 +170,19 @@ fetch_db_config() {
     port="$(aws ssm get-parameter \
       --region "$AWS_REGION" \
       --name "$SSM_DB_PORT" \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+
+    # 읽기 전용 엔드포인트는 선택값이다. 없으면 애플리케이션이 쓰기 엔드포인트로 fallback 한다.
+    read_host="$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "$SSM_DB_READ_HOST" \
+      --query 'Parameter.Value' \
+      --output text 2>/dev/null || true)"
+
+    read_port="$(aws ssm get-parameter \
+      --region "$AWS_REGION" \
+      --name "$SSM_DB_READ_PORT" \
       --query 'Parameter.Value' \
       --output text 2>/dev/null || true)"
 
@@ -198,6 +213,19 @@ fetch_db_config() {
       DB_NAME="$name"
       DB_USER="$user"
       DB_PASSWORD="$password"
+
+      if [[ -n "$read_host" && "$read_host" != "None" ]]; then
+        DB_READ_HOST="$read_host"
+        if [[ -n "$read_port" && "$read_port" != "None" ]]; then
+          DB_READ_PORT="$read_port"
+        else
+          DB_READ_PORT="5433"
+        fi
+      else
+        DB_READ_HOST=""
+        DB_READ_PORT=""
+      fi
+
       return 0
     fi
 
@@ -317,6 +345,16 @@ setup_backend_app() {
       -e "DB_USER=$DB_USER"
       -e "DB_PASSWORD=$DB_PASSWORD"
     )
+
+    if [[ -n "$DB_READ_HOST" ]]; then
+      db_env+=(
+        -e "DB_READ_HOST=$DB_READ_HOST"
+        -e "DB_READ_PORT=$DB_READ_PORT"
+      )
+      log "DB read endpoint configured at $DB_READ_HOST:$DB_READ_PORT (replica reads)"
+    else
+      log "DB read endpoint not set in SSM; backend will route reads to the primary endpoint"
+    fi
 
     if db_port_open; then
       log "DB endpoint reachable at $DB_HOST:$DB_PORT"
