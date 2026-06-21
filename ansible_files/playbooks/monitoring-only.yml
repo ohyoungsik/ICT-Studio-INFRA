@@ -1,0 +1,16 @@
+---
+# DB 4대에 모니터링 에이전트만 다시 깔고 싶을 때 쓰는 전용 playbook이다.
+# Swarm이나 postgres-ha stack 배포는 건드리지 않는다.
+- name: Prepare PostgreSQL HA nodes for monitoring only
+  hosts: postgres_ha
+  become: true
+  roles:
+    - common
+    - docker
+    - monitoring_agent
+
+- name: Render Prometheus scrape config on monitoring server
+  hosts: monitoring_server
+  become: true
+  roles:
+    - prometheus_config
