@@ -204,10 +204,16 @@ services:
         target: /usr/local/etc/haproxy/haproxy.cfg
         mode: 0444
     ports:
-      # 애플리케이션 또는 외부 테스트용 PostgreSQL 진입점이다.
+      # 애플리케이션 쓰기 또는 외부 테스트용 PostgreSQL 진입점(Primary)이다.
       # mode: host를 사용해 advancedproject 노드의 포트로 명확히 노출한다.
       - target: 5432
         published: 5432
+        protocol: tcp
+        mode: host
+      # 애플리케이션 읽기 전용 진입점(Replica)이다.
+      # SELECT 트래픽을 replica로 분산하기 위해 사용한다.
+      - target: 5433
+        published: 5433
         protocol: tcp
         mode: host
       # HAProxy stats socket이다.

@@ -12,6 +12,21 @@ resource "aws_ssm_parameter" "db_port" {
   overwrite = true
 }
 
+# 읽기 전용 엔드포인트. HAProxy는 동일한 db_main 노드에서 5433 포트로 replica 읽기를 라우팅한다.
+resource "aws_ssm_parameter" "db_read_host" {
+  name      = "/${local.name_prefix}/db/read_host"
+  type      = "String"
+  value     = aws_instance.db_main.private_ip
+  overwrite = true
+}
+
+resource "aws_ssm_parameter" "db_read_port" {
+  name      = "/${local.name_prefix}/db/read_port"
+  type      = "String"
+  value     = "5433"
+  overwrite = true
+}
+
 resource "aws_ssm_parameter" "db_name" {
   name      = "/${local.name_prefix}/db/name"
   type      = "String"
