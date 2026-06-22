@@ -1,6 +1,11 @@
 # ==============================================
 # Subnet 설정 (3가지 계층)
 # ==============================================
+
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
 # 디렉토리를 a, c 두 AZ으로 나누어 고가용성 달성
 
 locals {
@@ -17,8 +22,8 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name        = "${local.name_prefix}-public-subnet-${local.az_suffix[count.index]}"
-    Environment = local.env
+    Name        = "${var.name_prefix}-public-subnet-${var.az_suffix[count.index]}"
+    Environment = var.env
     Tier        = "public"
   }
 }
@@ -31,8 +36,8 @@ resource "aws_subnet" "private_app" {
   availability_zone = local.azs[count.index]
 
   tags = {
-    Name        = "${local.name_prefix}-private-app-subnet-${local.az_suffix[count.index]}"
-    Environment = local.env
+    Name        = "${var.name_prefix}-private-app-subnet-${var.az_suffix[count.index]}"
+    Environment = var.env
     Tier        = "private-app"
   }
 }
@@ -45,8 +50,8 @@ resource "aws_subnet" "db" {
   availability_zone = local.azs[count.index]
 
   tags = {
-    Name        = "${local.name_prefix}-db-subnet-${local.az_suffix[count.index]}"
-    Environment = local.env
+    Name        = "${var.name_prefix}-db-subnet-${var.az_suffix[count.index]}"
+    Environment = var.env
     Tier        = "db"
   }
 }

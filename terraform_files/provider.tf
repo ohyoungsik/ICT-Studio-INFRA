@@ -22,6 +22,10 @@ terraform {
       source  = "hashicorp/archive"
       version = "~> 2.7"
     }
+    cloudinit = {
+      source  = "hashicorp/cloudinit"
+      version = ">= 2.0"
+    }
   }
 }
 
@@ -31,4 +35,14 @@ provider "aws" {
 
 data "aws_availability_zones" "available" {
   state = "available"
+}
+
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical (Ubuntu 공식 배포자)
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
 }

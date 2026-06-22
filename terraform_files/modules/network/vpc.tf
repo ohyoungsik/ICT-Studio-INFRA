@@ -8,8 +8,8 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
 
   tags = {
-    Name        = "${local.name_prefix}-vpc"
-    Environment = local.env
+    Name        = "${var.name_prefix}-vpc"
+    Environment = var.env
   }
 }
 
@@ -18,16 +18,16 @@ resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
   tags = {
-    Name        = "${local.name_prefix}-igw"
-    Environment = local.env
+    Name        = "${var.name_prefix}-igw"
+    Environment = var.env
   }
 }
 
 # Elastic IP: NAT Gateway가 사용할 공유 IP
 resource "aws_eip" "nat" {
   tags = {
-    Name        = "${local.name_prefix}-nat-eip"
-    Environment = local.env
+    Name        = "${var.name_prefix}-nat-eip"
+    Environment = var.env
   }
 }
 
@@ -39,7 +39,7 @@ resource "aws_nat_gateway" "main" {
   depends_on = [aws_internet_gateway.main]
 
   tags = {
-    Name        = "${local.name_prefix}-nat"
-    Environment = local.env
+    Name        = "${var.name_prefix}-nat"
+    Environment = var.env
   }
 }

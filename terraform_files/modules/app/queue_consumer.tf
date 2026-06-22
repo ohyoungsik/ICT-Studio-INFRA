@@ -1,6 +1,6 @@
 resource "aws_ssm_document" "queue_consumer" {
   count           = var.enable_queue_consumer ? 1 : 0
-  name            = "${local.name_prefix}-queue-consumer"
+  name            = "${var.name_prefix}-queue-consumer"
   document_type   = "Command"
   document_format = "JSON"
 
@@ -19,7 +19,7 @@ resource "aws_ssm_document" "queue_consumer" {
             mkdir -p /opt/queue-consumer
 
             cat > /opt/queue-consumer/queue-consumer.env <<'ENV'
-            BACKEND_BASE_URL=http://${aws_lb.application_load_balancer.dns_name}
+            BACKEND_BASE_URL=http://${var.alb_dns_name}
             CONCERT_ID=${var.queue_metric_concert_id}
             BATCH_SIZE=${var.queue_consumer_batch_size}
             ENV

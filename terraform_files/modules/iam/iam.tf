@@ -6,7 +6,7 @@
 # - ECR(Elastic Container Registry): Docker 이미지 다운로드
 
 resource "aws_iam_role" "ec2_instance_role" {
-  name = "${local.name_prefix}-ec2-role"
+  name = "${var.name_prefix}-ec2-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -21,8 +21,8 @@ resource "aws_iam_role" "ec2_instance_role" {
   })
 
   tags = {
-    Name        = "${local.name_prefix}-ec2-role"
-    Environment = local.env
+    Name        = "${var.name_prefix}-ec2-role"
+    Environment = var.env
   }
 }
 
@@ -42,7 +42,7 @@ resource "aws_iam_role_policy_attachment" "ecr_readonly" {
 # - master: PutParameter로 manager IP, worker join token, Redis endpoint 저장
 # - worker: GetParameter로 위 값을 읽어 swarm join 및 Redis 연결
 resource "aws_iam_role_policy" "swarm_ssm" {
-  name = "${local.name_prefix}-swarm-ssm"
+  name = "${var.name_prefix}-swarm-ssm"
   role = aws_iam_role.ec2_instance_role.id
 
   policy = jsonencode({
@@ -55,16 +55,16 @@ resource "aws_iam_role_policy" "swarm_ssm" {
         "ssm:PutParameter"
       ]
       Resource = [
-        "arn:aws:ssm:*:*:parameter/${local.name_prefix}/swarm/*",
-        "arn:aws:ssm:*:*:parameter/${local.name_prefix}/redis/*",
-        "arn:aws:ssm:*:*:parameter/${local.name_prefix}/db/*"
+        "arn:aws:ssm:*:*:parameter/${var.name_prefix}/swarm/*",
+        "arn:aws:ssm:*:*:parameter/${var.name_prefix}/redis/*",
+        "arn:aws:ssm:*:*:parameter/${var.name_prefix}/db/*"
       ]
     }]
   })
 }
 
 resource "aws_iam_role_policy" "backend_image_s3" {
-  name = "${local.name_prefix}-backend-image-s3"
+  name = "${var.name_prefix}-backend-image-s3"
   role = aws_iam_role.ec2_instance_role.id
 
   policy = jsonencode({
@@ -81,7 +81,7 @@ resource "aws_iam_role_policy" "backend_image_s3" {
 
 # EC2 자기 자신의 Name 태그를 갱신할 수 있도록 허용
 resource "aws_iam_role_policy" "ec2_self_tag" {
-  name = "${local.name_prefix}-ec2-self-tag"
+  name = "${var.name_prefix}-ec2-self-tag"
   role = aws_iam_role.ec2_instance_role.id
 
   policy = jsonencode({
@@ -96,12 +96,12 @@ resource "aws_iam_role_policy" "ec2_self_tag" {
 
 # IAM 인스턴스 프로파일 생성: EC2가 IAM 역할을 사용할 수 있도록 설정
 resource "aws_iam_instance_profile" "instance_profile" {
-  name = "${local.name_prefix}-instance-profile"
+  name = "${var.name_prefix}-instance-profile"
   role = aws_iam_role.ec2_instance_role.name
 }
 
 resource "aws_iam_role_policy" "prometheus_ec2_sd" {
-  name = "${local.name_prefix}-prometheus-ec2-sd"
+  name = "${var.name_prefix}-prometheus-ec2-sd"
   role = aws_iam_role.ec2_instance_role.id
   # prometheus가 aws ec2목록을 볼 수 있게 설정
   policy = jsonencode({
@@ -121,7 +121,7 @@ resource "aws_iam_role_policy" "prometheus_ec2_sd" {
 }
 
 resource "aws_iam_role_policy" "queue_metrics" {
-  name = "${local.name_prefix}-queue-metrics"
+  name = "${var.name_prefix}-queue-metrics"
   role = aws_iam_role.ec2_instance_role.id
 
   policy = jsonencode({
