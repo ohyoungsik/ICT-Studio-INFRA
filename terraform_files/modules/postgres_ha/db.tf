@@ -23,12 +23,12 @@ locals {
 }
 
 resource "aws_instance" "db_main" {
-  ami                    = data.aws_ami.ubuntu.id
+  ami                    = var.ami_id
   instance_type          = "t3.small"
-  subnet_id              = aws_subnet.db[0].id
-  vpc_security_group_ids = [aws_security_group.db.id]
-  key_name               = aws_key_pair.app_key.key_name
-  iam_instance_profile   = aws_iam_instance_profile.instance_profile.name
+  subnet_id              = var.db_subnet_ids[0]
+  vpc_security_group_ids = [var.db_security_group_id]
+  key_name               = var.key_name
+  iam_instance_profile   = var.iam_instance_profile_name
 
   root_block_device {
     volume_size = 20
@@ -36,26 +36,26 @@ resource "aws_instance" "db_main" {
   }
 
   user_data_replace_on_change = true
-  user_data_base64 = base64encode(templatefile("${path.module}/db-main-userdata.sh", {
+  user_data_base64 = base64encode(templatefile("${path.root}/scripts/db-main-userdata.sh", {
     hostname = "db-main"
   }))
 
   tags = {
-    Name        = "${local.name_prefix}-db-main"
+    Name        = "${var.name_prefix}-db-main"
     Role        = "db"
     SwarmRole   = "manager"
     Project     = "Ticketing-HA"
-    Environment = local.env
+    Environment = var.env
   }
 }
 
 resource "aws_instance" "postgres_primary" {
-  ami                    = data.aws_ami.ubuntu.id
+  ami                    = var.ami_id
   instance_type          = var.postgres_ha_instance_type
-  subnet_id              = aws_subnet.db[local.postgres_ha_nodes.primary.subnet_index].id
-  vpc_security_group_ids = [aws_security_group.db.id]
-  key_name               = aws_key_pair.app_key.key_name
-  iam_instance_profile   = aws_iam_instance_profile.instance_profile.name
+  subnet_id              = var.db_subnet_ids[local.postgres_ha_nodes.primary.subnet_index]
+  vpc_security_group_ids = [var.db_security_group_id]
+  key_name               = var.key_name
+  iam_instance_profile   = var.iam_instance_profile_name
 
   root_block_device {
     volume_size = var.postgres_ha_root_volume_size
@@ -63,7 +63,7 @@ resource "aws_instance" "postgres_primary" {
   }
 
   user_data_replace_on_change = true
-  user_data = templatefile("${path.module}/postgres-ha-userdata.sh", {
+  user_data = templatefile("${path.root}/scripts/postgres-ha-userdata.sh", {
     hostname = local.postgres_ha_nodes.primary.name
   })
 
@@ -71,17 +71,17 @@ resource "aws_instance" "postgres_primary" {
     Name        = local.postgres_ha_nodes.primary.name
     Role        = "postgres-primary"
     Project     = "Ticketing-HA"
-    Environment = local.env
+    Environment = var.env
   }
 }
 
 resource "aws_instance" "postgres_replica1" {
-  ami                    = data.aws_ami.ubuntu.id
+  ami                    = var.ami_id
   instance_type          = var.postgres_ha_instance_type
-  subnet_id              = aws_subnet.db[local.postgres_ha_nodes.replica1.subnet_index].id
-  vpc_security_group_ids = [aws_security_group.db.id]
-  key_name               = aws_key_pair.app_key.key_name
-  iam_instance_profile   = aws_iam_instance_profile.instance_profile.name
+  subnet_id              = var.db_subnet_ids[local.postgres_ha_nodes.replica1.subnet_index]
+  vpc_security_group_ids = [var.db_security_group_id]
+  key_name               = var.key_name
+  iam_instance_profile   = var.iam_instance_profile_name
 
   root_block_device {
     volume_size = var.postgres_ha_root_volume_size
@@ -89,7 +89,7 @@ resource "aws_instance" "postgres_replica1" {
   }
 
   user_data_replace_on_change = true
-  user_data = templatefile("${path.module}/postgres-ha-userdata.sh", {
+  user_data = templatefile("${path.root}/scripts/postgres-ha-userdata.sh", {
     hostname = local.postgres_ha_nodes.replica1.name
   })
 
@@ -97,17 +97,17 @@ resource "aws_instance" "postgres_replica1" {
     Name        = local.postgres_ha_nodes.replica1.name
     Role        = "postgres-replica"
     Project     = "Ticketing-HA"
-    Environment = local.env
+    Environment = var.env
   }
 }
 
 resource "aws_instance" "postgres_replica2" {
-  ami                    = data.aws_ami.ubuntu.id
+  ami                    = var.ami_id
   instance_type          = var.postgres_ha_instance_type
-  subnet_id              = aws_subnet.db[local.postgres_ha_nodes.replica2.subnet_index].id
-  vpc_security_group_ids = [aws_security_group.db.id]
-  key_name               = aws_key_pair.app_key.key_name
-  iam_instance_profile   = aws_iam_instance_profile.instance_profile.name
+  subnet_id              = var.db_subnet_ids[local.postgres_ha_nodes.replica2.subnet_index]
+  vpc_security_group_ids = [var.db_security_group_id]
+  key_name               = var.key_name
+  iam_instance_profile   = var.iam_instance_profile_name
 
   root_block_device {
     volume_size = var.postgres_ha_root_volume_size
@@ -115,7 +115,7 @@ resource "aws_instance" "postgres_replica2" {
   }
 
   user_data_replace_on_change = true
-  user_data = templatefile("${path.module}/postgres-ha-userdata.sh", {
+  user_data = templatefile("${path.root}/scripts/postgres-ha-userdata.sh", {
     hostname = local.postgres_ha_nodes.replica2.name
   })
 
@@ -123,6 +123,6 @@ resource "aws_instance" "postgres_replica2" {
     Name        = local.postgres_ha_nodes.replica2.name
     Role        = "postgres-replica"
     Project     = "Ticketing-HA"
-    Environment = local.env
+    Environment = var.env
   }
 }

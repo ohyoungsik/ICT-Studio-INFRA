@@ -1,11 +1,11 @@
 data "archive_file" "asg_notify_lambda_zip" {
   type        = "zip"
-  source_file = "${path.module}/lambda/asg_notify.py"
-  output_path = "${path.module}/lambda/asg_notify.zip"
+  source_file = "${path.root}/lambda/asg_notify.py"
+  output_path = "${path.root}/lambda/asg_notify.zip"
 }
 
 resource "aws_iam_role" "asg_notify_lambda_role" {
-  name = "${local.name_prefix}-asg-notify-lambda-role"
+  name = "${var.name_prefix}-asg-notify-lambda-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -27,7 +27,7 @@ resource "aws_iam_role_policy_attachment" "asg_notify_lambda_basic" {
 }
 
 resource "aws_lambda_function" "asg_notify" {
-  function_name = "${local.name_prefix}-asg-notify"
+  function_name = "${var.name_prefix}-asg-notify"
   role          = aws_iam_role.asg_notify_lambda_role.arn
   handler       = "asg_notify.lambda_handler"
   runtime       = "python3.12"
@@ -47,7 +47,7 @@ resource "aws_lambda_function" "asg_notify" {
 }
 
 resource "aws_cloudwatch_event_rule" "asg_events" {
-  name        = "${local.name_prefix}-asg-events"
+  name        = "${var.name_prefix}-asg-events"
   description = "Detect Auto Scaling launch and terminate events"
 
   event_pattern = jsonencode({

@@ -1,5 +1,5 @@
 resource "aws_ssm_document" "queue_metric_publisher" {
-  name            = "${local.name_prefix}-queue-metric-publisher"
+  name            = "${var.name_prefix}-queue-metric-publisher"
   document_type   = "Command"
   document_format = "JSON"
 
@@ -19,13 +19,13 @@ resource "aws_ssm_document" "queue_metric_publisher" {
 
             cat > /opt/redis/queue-metric.env <<'ENV'
             AWS_REGION=${var.region}
-            NAME_PREFIX=${local.name_prefix}
-            ASG_NAME=${local.name_prefix}-app-asg
+            NAME_PREFIX=${var.name_prefix}
+            ASG_NAME=${var.name_prefix}-app-asg
             METRIC_NAMESPACE=${var.queue_metric_namespace}
-            ENVIRONMENT=${local.env}
+            ENVIRONMENT=${var.env}
             CONCERT_ID=${var.queue_metric_concert_id}
             REDIS_CONTAINER_NAME=redis
-            SSM_REDIS_PASSWORD=/${local.name_prefix}/redis/password
+            SSM_REDIS_PASSWORD=/${var.name_prefix}/redis/password
             QUEUE_ZSET_KEY=queue:concert:${var.queue_metric_concert_id}:zset
             QUEUE_LIST_KEY=queue:concert:${var.queue_metric_concert_id}
             ENV
@@ -131,5 +131,5 @@ resource "aws_ssm_association" "queue_metric_publisher" {
     values = ["master"]
   }
 
-  depends_on = [aws_iam_role_policy.queue_metrics]
+
 }

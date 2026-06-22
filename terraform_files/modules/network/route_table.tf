@@ -11,8 +11,8 @@ resource "aws_route_table" "public" {
   }
 
   tags = {
-    Name        = "${local.name_prefix}-public-rt"
-    Environment = local.env
+    Name        = "${var.name_prefix}-public-rt"
+    Environment = var.env
     Tier        = "public"
   }
 }
@@ -33,8 +33,8 @@ resource "aws_route_table" "private_app" {
   }
 
   tags = {
-    Name        = "${local.name_prefix}-private-app-rt"
-    Environment = local.env
+    Name        = "${var.name_prefix}-private-app-rt"
+    Environment = var.env
     Tier        = "private-app"
   }
 }
@@ -55,8 +55,8 @@ resource "aws_route_table" "db" {
   }
 
   tags = {
-    Name        = "${local.name_prefix}-db-rt"
-    Environment = local.env
+    Name        = "${var.name_prefix}-db-rt"
+    Environment = var.env
     Tier        = "db"
   }
 }

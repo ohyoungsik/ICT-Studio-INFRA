@@ -1,0 +1,62 @@
+name: Terraform Plan
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend_key:
+        description: "Terraform backend state key."
+        required: true
+        default: "prod-ict/terraform.tfstate"
+        type: string
+
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: ap-northeast-2
+      TF_BACKEND_KEY: ${{ inputs.backend_key || 'prod-ict/terraform.tfstate' }}
+      TF_INPUT: "false"
+      TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TF_VAR_discord_webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Init backend
+        run: bash scripts/init-backend-ci.sh
+
+      - name: Terraform validate
+        run: terraform -chdir=terraform_files validate
+
+      - name: Terraform plan
+        run: terraform -chdir=terraform_files plan -out=tfplan
+
+      - name: Show Terraform plan summary
+        run: terraform -chdir=terraform_files show -no-color tfplan
+
+      - name: Upload Terraform plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: terraform_files/tfplan
+          if-no-files-found: error

@@ -6,14 +6,14 @@
 # 트래픽 변화에 따라 인스턴스 개수 자동 조정
 
 resource "aws_autoscaling_group" "app_asg" {
-  name                = "${local.name_prefix}-app-asg"
+  name                = "${var.name_prefix}-app-asg"
   desired_capacity    = var.desired_capacity
   min_size            = var.min_size
   max_size            = var.max_size
-  vpc_zone_identifier = aws_subnet.private_app[*].id
+  vpc_zone_identifier = var.private_app_subnet_ids
 
   target_group_arns = [
-    aws_lb_target_group.backend.arn
+    var.backend_target_group_arn
   ]
 
   launch_template {
@@ -37,7 +37,7 @@ resource "aws_autoscaling_group" "app_asg" {
 
   tag {
     key                 = "Name"
-    value               = "${local.name_prefix}-private-app"
+    value               = "${var.name_prefix}-private-app"
     propagate_at_launch = true
   }
 
@@ -49,13 +49,13 @@ resource "aws_autoscaling_group" "app_asg" {
 
   tag { # env 태그 추가
     key                 = "Environment"
-    value               = local.env
+    value               = var.env
     propagate_at_launch = true
   }
 }
 
 resource "aws_autoscaling_policy" "cpu_target_tracking" {
-  name                      = "${local.name_prefix}-cpu-target"
+  name                      = "${var.name_prefix}-cpu-target"
   autoscaling_group_name    = aws_autoscaling_group.app_asg.name
   policy_type               = "TargetTrackingScaling"
   estimated_instance_warmup = 60
@@ -71,7 +71,7 @@ resource "aws_autoscaling_policy" "cpu_target_tracking" {
 }
 
 resource "aws_autoscaling_policy" "queue_target_tracking" {
-  name                      = "${local.name_prefix}-queue-target"
+  name                      = "${var.name_prefix}-queue-target"
   autoscaling_group_name    = aws_autoscaling_group.app_asg.name
   policy_type               = "TargetTrackingScaling"
   estimated_instance_warmup = 120
@@ -89,7 +89,7 @@ resource "aws_autoscaling_policy" "queue_target_tracking" {
 }
 
 resource "aws_autoscaling_policy" "queue_burst_step_scale_out" {
-  name                      = "${local.name_prefix}-queue-burst-step-out"
+  name                      = "${var.name_prefix}-queue-burst-step-out"
   autoscaling_group_name    = aws_autoscaling_group.app_asg.name
   policy_type               = "StepScaling"
   adjustment_type           = "ChangeInCapacity"
@@ -109,7 +109,7 @@ resource "aws_autoscaling_policy" "queue_burst_step_scale_out" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "queue_burst_scale_out" {
-  alarm_name          = "${local.name_prefix}-queue-burst-scale-out"
+  alarm_name          = "${var.name_prefix}-queue-burst-scale-out"
   alarm_description   = "Scale out app ASG quickly when the total Redis queue length spikes."
   namespace           = var.queue_metric_namespace
   metric_name         = "QueueLength"
@@ -121,7 +121,7 @@ resource "aws_cloudwatch_metric_alarm" "queue_burst_scale_out" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    Environment = local.env
+    Environment = var.env
     ConcertId   = var.queue_metric_concert_id
   }
 
